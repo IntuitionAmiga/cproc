@@ -1,0 +1,24 @@
+export
+function l $vla(l %.1) {
+@start.1
+	%.2 =l alloc8 8
+	storel %.1, %.2
+@body.2
+	%.3 =l loadl %.2
+	%.4 =l mul %.3, 8
+	%.5 =l alloc8 %.4
+	%.6 =l extsw 42
+	%.7 =l loadl %.2
+	%.8 =l extsw 1
+	%.9 =l sub %.7, %.8
+	%.10 =l mul %.9, 8
+	%.11 =l add %.5, %.10
+	storel %.6, %.11
+	%.12 =l loadl %.2
+	%.13 =l extsw 1
+	%.14 =l sub %.12, %.13
+	%.15 =l mul %.14, 8
+	%.16 =l add %.5, %.15
+	%.17 =l loadl %.16
+	ret %.17
+}

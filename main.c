@@ -1,9 +1,12 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include "util.h"
 #include "arg.h"
 #include "cc.h"
+
+const char *ie64unitprefix;
 
 static void
 usage(void)
@@ -29,6 +32,16 @@ main(int argc, char *argv[])
 	case 'o':
 		output = EARGF(usage());
 		break;
+	case 'f': {
+		char *arg = EARGF(usage());
+		static const char opt[] = "ie64-unit-prefix=";
+		if (strncmp(arg, opt, sizeof opt - 1) != 0)
+			usage();
+		ie64unitprefix = arg + sizeof opt - 1;
+		if (!*ie64unitprefix)
+			usage();
+		break;
+	}
 	default:
 		usage();
 	} ARGEND

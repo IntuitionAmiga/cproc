@@ -1,0 +1,129 @@
+export
+function $facilities(l %.1, l %.3, l %.5, s %.7, d %.9) {
+@start.1
+	%.2 =l alloc8 8
+	storel %.1, %.2
+	%.4 =l alloc8 8
+	storel %.3, %.4
+	%.6 =l alloc8 8
+	storel %.5, %.6
+	%.8 =l alloc4 4
+	stores %.7, %.8
+	%.10 =l alloc8 8
+	stored %.9, %.10
+@body.2
+	ie64nop
+	ie64sei
+	ie64cli
+	ie64tlbflush
+	%.11 =l loadl %.4
+	ie64tlbinval %.11
+	ie64suaen
+	ie64suadis
+	ie64wait 5
+	%.12 =l loadl %.4
+	ie64mtcr 6, %.12
+	%.13 =l ie64mfcr 6
+	%.14 =l ie64smode
+	%.15 =l ie64syscall 7
+	%.16 =l loadl %.2
+	%.17 =l loadl %.6
+	%.18 =l ie64xchg %.16, %.17
+	%.19 =l loadl %.2
+	%.20 =l loadl %.6
+	%.21 =l ie64faa %.19, %.20
+	%.22 =l loadl %.2
+	%.23 =l loadl %.6
+	%.24 =l ie64fand %.22, %.23
+	%.25 =l loadl %.2
+	%.26 =l loadl %.6
+	%.27 =l ie64for %.25, %.26
+	%.28 =l loadl %.2
+	%.29 =l loadl %.6
+	%.30 =l ie64fxor %.28, %.29
+	%.31 =l loadl %.2
+	%.32 =l loadl %.4
+	%.33 =l loadl %.6
+	ie64casd %.33
+	%.34 =l ie64cas %.31, %.32
+	%.35 =s ie64fmovecr 0
+	%.36 =d ie64dmovecr 1
+	%.37 =s loads %.8
+	%.38 =s loads %.8
+	%.39 =s ie64fmod %.37, %.38
+	%.40 =d loadd %.10
+	%.41 =d loadd %.10
+	%.42 =d ie64dmod %.40, %.41
+	%.43 =s loads %.8
+	%.44 =s ie64fabs %.43
+	%.45 =d loadd %.10
+	%.46 =d ie64dabs %.45
+	%.47 =s loads %.8
+	%.48 =s ie64fint %.47
+	%.49 =d loadd %.10
+	%.50 =d ie64dint %.49
+	%.51 =s loads %.8
+	%.52 =d ie64fcvtsd %.51
+	%.53 =d loadd %.10
+	%.54 =s ie64fcvtds %.53
+	%.55 =s loads %.8
+	%.56 =s ie64fsin %.55
+	%.57 =s loads %.8
+	%.58 =s ie64fcos %.57
+	%.59 =s loads %.8
+	%.60 =s ie64ftan %.59
+	%.61 =s loads %.8
+	%.62 =s ie64fatan %.61
+	%.63 =s loads %.8
+	%.64 =s ie64flog %.63
+	%.65 =s loads %.8
+	%.66 =s ie64fexp %.65
+	%.67 =s loads %.8
+	%.68 =s loads %.8
+	%.69 =s ie64fpow %.67, %.68
+	%.70 =s loads %.8
+	%.71 =s ie64fsqrt %.70
+	%.72 =d loadd %.10
+	%.73 =d ie64dsin %.72
+	%.74 =d loadd %.10
+	%.75 =d ie64dcos %.74
+	%.76 =d loadd %.10
+	%.77 =d ie64dtan %.76
+	%.78 =d loadd %.10
+	%.79 =d ie64datan %.78
+	%.80 =d loadd %.10
+	%.81 =d ie64dlog %.80
+	%.82 =d loadd %.10
+	%.83 =d ie64dexp %.82
+	%.84 =d loadd %.10
+	%.85 =d loadd %.10
+	%.86 =d ie64dpow %.84, %.85
+	%.87 =d loadd %.10
+	%.88 =d ie64dsqrt %.87
+	%.89 =l ie64fmovsr
+	%.90 =l ie64fmovcr
+	ie64fmovsc 1
+	ie64fmovcc 2
+	ret
+}
+export
+function $stop() {
+@start.3
+@body.4
+	ie64halt
+	hlt
+}
+export
+function $rettrap() {
+@start.5
+@body.6
+	ie64eret
+	hlt
+}
+export
+function $retirq() {
+@start.7
+@body.8
+	ie64rti
+	hlt
+}

@@ -1,0 +1,110 @@
+typedef unsigned long u64;
+
+u64 __builtin_ie64_mfcr(unsigned int);
+void __builtin_ie64_mtcr(unsigned int, u64);
+void __builtin_ie64_tlbinval(u64);
+void __builtin_ie64_tlbflush(void);
+void __builtin_ie64_suaen(void);
+void __builtin_ie64_suadis(void);
+_Noreturn void __builtin_ie64_eret(void);
+_Noreturn void __builtin_ie64_rti(void);
+_Noreturn void __builtin_ie64_halt(void);
+void __builtin_ie64_nop(void);
+void __builtin_ie64_sei(void);
+void __builtin_ie64_cli(void);
+void __builtin_ie64_wait(unsigned int);
+u64 __builtin_ie64_syscall(unsigned int);
+u64 __builtin_ie64_smode(void);
+u64 __builtin_ie64_cas(volatile u64 *, u64, u64);
+u64 __builtin_ie64_xchg(volatile u64 *, u64);
+u64 __builtin_ie64_faa(volatile u64 *, u64);
+u64 __builtin_ie64_fand(volatile u64 *, u64);
+u64 __builtin_ie64_for(volatile u64 *, u64);
+u64 __builtin_ie64_fxor(volatile u64 *, u64);
+float __builtin_ie64_fmovecr(unsigned int);
+double __builtin_ie64_dmovecr(unsigned int);
+float __builtin_ie64_fmod(float, float);
+double __builtin_ie64_dmod(double, double);
+float __builtin_ie64_fabs(float);
+double __builtin_ie64_dabs(double);
+float __builtin_ie64_fint(float);
+double __builtin_ie64_dint(double);
+double __builtin_ie64_fcvtsd(float);
+float __builtin_ie64_fcvtds(double);
+float __builtin_ie64_fsin(float);
+float __builtin_ie64_fcos(float);
+float __builtin_ie64_ftan(float);
+float __builtin_ie64_fatan(float);
+float __builtin_ie64_flog(float);
+float __builtin_ie64_fexp(float);
+float __builtin_ie64_fpow(float, float);
+float __builtin_ie64_fsqrt(float);
+double __builtin_ie64_dsin(double);
+double __builtin_ie64_dcos(double);
+double __builtin_ie64_dtan(double);
+double __builtin_ie64_datan(double);
+double __builtin_ie64_dlog(double);
+double __builtin_ie64_dexp(double);
+double __builtin_ie64_dpow(double, double);
+double __builtin_ie64_dsqrt(double);
+u64 __builtin_ie64_fmovsr(void);
+u64 __builtin_ie64_fmovcr(void);
+void __builtin_ie64_fmovsc(unsigned int);
+void __builtin_ie64_fmovcc(unsigned int);
+
+void
+facilities(volatile u64 *p, u64 a, u64 b, float s, double d)
+{
+	__builtin_ie64_nop();
+	__builtin_ie64_sei();
+	__builtin_ie64_cli();
+	__builtin_ie64_tlbflush();
+	__builtin_ie64_tlbinval(a);
+	__builtin_ie64_suaen();
+	__builtin_ie64_suadis();
+	__builtin_ie64_wait(5);
+	__builtin_ie64_mtcr(6, a);
+	__builtin_ie64_mfcr(6);
+	__builtin_ie64_smode();
+	__builtin_ie64_syscall(7);
+	__builtin_ie64_xchg(p, b);
+	__builtin_ie64_faa(p, b);
+	__builtin_ie64_fand(p, b);
+	__builtin_ie64_for(p, b);
+	__builtin_ie64_fxor(p, b);
+	__builtin_ie64_cas(p, a, b);
+	__builtin_ie64_fmovecr(0);
+	__builtin_ie64_dmovecr(1);
+	__builtin_ie64_fmod(s, s);
+	__builtin_ie64_dmod(d, d);
+	__builtin_ie64_fabs(s);
+	__builtin_ie64_dabs(d);
+	__builtin_ie64_fint(s);
+	__builtin_ie64_dint(d);
+	__builtin_ie64_fcvtsd(s);
+	__builtin_ie64_fcvtds(d);
+	__builtin_ie64_fsin(s);
+	__builtin_ie64_fcos(s);
+	__builtin_ie64_ftan(s);
+	__builtin_ie64_fatan(s);
+	__builtin_ie64_flog(s);
+	__builtin_ie64_fexp(s);
+	__builtin_ie64_fpow(s, s);
+	__builtin_ie64_fsqrt(s);
+	__builtin_ie64_dsin(d);
+	__builtin_ie64_dcos(d);
+	__builtin_ie64_dtan(d);
+	__builtin_ie64_datan(d);
+	__builtin_ie64_dlog(d);
+	__builtin_ie64_dexp(d);
+	__builtin_ie64_dpow(d, d);
+	__builtin_ie64_dsqrt(d);
+	__builtin_ie64_fmovsr();
+	__builtin_ie64_fmovcr();
+	__builtin_ie64_fmovsc(1);
+	__builtin_ie64_fmovcc(2);
+}
+
+_Noreturn void stop(void) { __builtin_ie64_halt(); }
+_Noreturn void rettrap(void) { __builtin_ie64_eret(); }
+_Noreturn void retirq(void) { __builtin_ie64_rti(); }

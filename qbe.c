@@ -149,7 +149,12 @@ mkglobal(struct decl *d)
 		v->u.name = d->asmname;
 		v->id = 0;
 	} else {
-		v->u.name = d->name;
+		if (d->linkage != LINKEXTERN && ie64unitprefix) {
+			size_t n = strlen(ie64unitprefix) + 1 + strlen(d->name) + 1;
+			v->u.name = xmalloc(n);
+			snprintf(v->u.name, n, "%s.%s", ie64unitprefix, d->name);
+		} else
+			v->u.name = d->name;
 		v->id = d->linkage == LINKNONE ? ++id : 0;
 	}
 
@@ -208,6 +213,54 @@ qbetype(struct type *t)
 	assert(0);
 }
 
+static bool
+ie64wideint(struct type *t)
+{
+	return strcmp(targ->name, "ie64") == 0
+		&& t->prop & PROPINT && t->size < 8;
+}
+
+static int
+abiclass(struct type *t)
+{
+	return ie64wideint(t) ? 'l' : qbetype(t).base;
+}
+
+static struct value *convert(struct func *, struct type *, struct type *,
+	struct value *);
+
+static struct value *
+ie64abiextend(struct func *f, struct type *t, struct value *v)
+{
+	if (!ie64wideint(t))
+		return v;
+	return convert(f, t->u.arith.issigned ? &typelong : &typeulong, t, v);
+}
+
+static enum instkind
+volatileop(enum instkind op)
+{
+	if (strcmp(targ->name, "ie64") != 0)
+		error(&tok.loc, "volatile access is not yet supported on this target");
+	switch (op) {
+	case ISTOREB: return ISTOREVB;
+	case ISTOREH: return ISTOREVH;
+	case ISTOREW: return ISTOREVW;
+	case ISTOREL: return ISTOREVL;
+	case ISTORES: return ISTOREVS;
+	case ISTORED: return ISTOREVD;
+	case ILOADSB: return ILOADVSB;
+	case ILOADUB: return ILOADVUB;
+	case ILOADSH: return ILOADVSH;
+	case ILOADUH: return ILOADVUH;
+	case ILOADW: return ILOADVW;
+	case ILOADL: return ILOADVL;
+	case ILOADS: return ILOADVS;
+	case ILOADD: return ILOADVD;
+	default: fatal("invalid volatile memory operation");
+	}
+}
+
 /* functions */
 
 static void emittype(struct type *);
@@ -226,6 +279,36 @@ static const char *const instname[] = {
 #define OP(op, name) [op] = name,
 #include "ops.h"
 #undef OP
+};
+
+static const enum instkind ie64inst[IE64B_COUNT] = {
+	[IE64B_NOP] = IIE64NOP, [IE64B_HALT] = IIE64HALT,
+	[IE64B_SEI] = IIE64SEI, [IE64B_CLI] = IIE64CLI,
+	[IE64B_TLBFLUSH] = IIE64TLBFLUSH, [IE64B_SUAEN] = IIE64SUAEN,
+	[IE64B_SUADIS] = IIE64SUADIS, [IE64B_ERET] = IIE64ERET,
+	[IE64B_RTI] = IIE64RTI, [IE64B_SMODE] = IIE64SMODE,
+	[IE64B_FMOVSR] = IIE64FMOVSR, [IE64B_FMOVCR] = IIE64FMOVCR,
+	[IE64B_TLBINVAL] = IIE64TLBINVAL, [IE64B_WAIT] = IIE64WAIT,
+	[IE64B_SYSCALL] = IIE64SYSCALL, [IE64B_MFCR] = IIE64MFCR,
+	[IE64B_FMOVECR] = IIE64FMOVECR, [IE64B_DMOVECR] = IIE64DMOVECR,
+	[IE64B_FMOVSC] = IIE64FMOVSC, [IE64B_FMOVCC] = IIE64FMOVCC,
+	[IE64B_MTCR] = IIE64MTCR, [IE64B_FMOD] = IIE64FMOD,
+	[IE64B_DMOD] = IIE64DMOD, [IE64B_FABS] = IIE64FABS,
+	[IE64B_DABS] = IIE64DABS, [IE64B_FINT] = IIE64FINT,
+	[IE64B_DINT] = IIE64DINT, [IE64B_FCVTSD] = IIE64FCVTSD,
+	[IE64B_FCVTDS] = IIE64FCVTDS, [IE64B_FSIN] = IIE64FSIN,
+	[IE64B_FCOS] = IIE64FCOS, [IE64B_FTAN] = IIE64FTAN,
+	[IE64B_FATAN] = IIE64FATAN, [IE64B_FLOG] = IIE64FLOG,
+	[IE64B_FEXP] = IIE64FEXP, [IE64B_FPOW] = IIE64FPOW,
+	[IE64B_FSQRT] = IIE64FSQRT,
+	[IE64B_DSIN] = IIE64DSIN, [IE64B_DCOS] = IIE64DCOS,
+	[IE64B_DTAN] = IIE64DTAN, [IE64B_DATAN] = IIE64DATAN,
+	[IE64B_DLOG] = IIE64DLOG, [IE64B_DEXP] = IIE64DEXP,
+	[IE64B_DPOW] = IIE64DPOW, [IE64B_DSQRT] = IIE64DSQRT,
+	[IE64B_XCHG] = IIE64XCHG,
+	[IE64B_FAA] = IIE64FAA, [IE64B_FAND] = IIE64FAND,
+	[IE64B_FOR] = IIE64FOR, [IE64B_FXOR] = IIE64FXOR,
+	[IE64B_CAS] = IIE64CAS,
 };
 
 static struct inst *
@@ -454,8 +537,6 @@ funcstore(struct func *f, struct type *t, enum typequal tq, struct lvalue lval, 
 	struct qbetype qt;
 	int bits;
 
-	if (tq & QUALVOLATILE)
-		error(&tok.loc, "volatile store is not yet supported");
 	if (tq & QUALCONST)
 		error(&tok.loc, "cannot store to 'const' object");
 	tp = t->prop;
@@ -465,6 +546,8 @@ funcstore(struct func *f, struct type *t, enum typequal tq, struct lvalue lval, 
 	case TYPESTRUCT:
 	case TYPEUNION:
 	case TYPEARRAY:
+		if (tq & QUALVOLATILE)
+			error(&tok.loc, "volatile aggregate store is not yet supported");
 		funccopy(f, lval.addr, v, t->size, t->align);
 		break;
 	case TYPEPOINTER:
@@ -481,19 +564,21 @@ funcstore(struct func *f, struct type *t, enum typequal tq, struct lvalue lval, 
 			v = funcinst(f, IAND, qt.base, v, mkintconst(mask));
 			v = funcinst(f, IOR, qt.base, v,
 				funcinst(f, IAND, qt.base,
-					funcinst(f, qt.load, qt.base, lval.addr, NULL),
+					funcinst(f, tq & QUALVOLATILE ? volatileop(qt.load) : qt.load,
+						qt.base, lval.addr, NULL),
 					mkintconst(~mask)
 				)
 			);
 		}
-		funcinst(f, qt.store, 0, v, lval.addr);
+		funcinst(f, tq & QUALVOLATILE ? volatileop(qt.store) : qt.store,
+			0, v, lval.addr);
 		break;
 	}
 	return r;
 }
 
 static struct value *
-funcload(struct func *f, struct type *t, struct lvalue lval)
+funcload(struct func *f, struct type *t, enum typequal tq, struct lvalue lval)
 {
 	struct value *v;
 	struct qbetype qt;
@@ -505,7 +590,8 @@ funcload(struct func *f, struct type *t, struct lvalue lval)
 		return lval.addr;
 	}
 	qt = qbetype(t);
-	v = funcinst(f, qt.load, qt.base, lval.addr, NULL);
+	v = funcinst(f, tq & QUALVOLATILE ? volatileop(qt.load) : qt.load,
+		qt.base, lval.addr, NULL);
 	return funcbits(f, t, v, lval.bits);
 }
 
@@ -624,6 +710,8 @@ funcret(struct func *f, struct value *v)
 	struct block *b = f->end;
 
 	if (!b->jump.kind) {
+		if (v)
+			v = ie64abiextend(f, f->type->base, v);
 		b->jump.kind = JUMP_RET;
 		b->jump.arg = v;
 	}
@@ -768,7 +856,7 @@ funcexpr(struct func *f, struct expr *e)
 	case EXPRIDENT:
 		d = e->u.ident.decl;
 		switch (d->kind) {
-		case DECLOBJECT: return funcload(f, e->type, (struct lvalue){d->value});
+		case DECLOBJECT: return funcload(f, e->type, e->qual, (struct lvalue){d->value});
 		case DECLCONST:  return d->value;
 		default:
 			fatal("unimplemented declaration kind %d", d->kind);
@@ -783,10 +871,10 @@ funcexpr(struct func *f, struct expr *e)
 	case EXPRBITFIELD:
 	case EXPRCOMPOUND:
 		lval = funclval(f, e);
-		return funcload(f, e->type, lval);
+		return funcload(f, e->type, e->qual, lval);
 	case EXPRINCDEC:
 		lval = funclval(f, e->base);
-		l = funcload(f, e->base->type, lval);
+		l = funcload(f, e->base->type, e->base->qual, lval);
 		t = e->type;
 		if (t->kind == TYPEPOINTER) {
 			if (t->base->kind == TYPEARRAY && t->base->size == 0) {
@@ -812,13 +900,41 @@ funcexpr(struct func *f, struct expr *e)
 		}
 		t = e->type;
 		emittype(t);
-		v = funcinst(f, ICALL, qbetype(t).base, funcexpr(f, e->base), t->value);
+		if (e->u.call.ie64) {
+			op = ie64inst[e->u.call.ie64];
+			if (e->u.call.ie64 == IE64B_CAS) {
+				funcinst(f, IIE64CASD, 0, argvals[2], NULL);
+				v = funcinst(f, op, qbetype(t).base, argvals[0], argvals[1]);
+			} else {
+				v = funcinst(f, op, qbetype(t).base,
+					e->u.call.nargs > 0 ? argvals[0] : NULL,
+					e->u.call.nargs > 1 ? argvals[1] : NULL);
+			}
+			e = e->base;
+			if (e->kind == EXPRUNARY && e->op == TBAND) {
+				e = e->base;
+				if (e->kind == EXPRIDENT && e->u.ident.decl->u.func.isnoreturn)
+					funchlt(f);
+			}
+			return v;
+		}
 		functype = e->base->type->base;
+		struct decl *param = functype->u.func.params;
+		for (arg = e->u.call.args, i = 0; arg; arg = arg->next, ++i) {
+			struct type *at = param ? param->type : arg->type;
+			argvals[i] = ie64abiextend(f, at, argvals[i]);
+			if (param)
+				param = param->next;
+		}
+		v = funcinst(f, ICALL, abiclass(t), funcexpr(f, e->base), t->value);
+		param = functype->u.func.params;
 		for (arg = e->u.call.args, i = 0; arg; arg = arg->next, ++i) {
 			if (functype->u.func.isvararg && i == functype->u.func.nparam)
 				funcinst(f, IVARARG, 0, NULL, NULL);
-			t = arg->type;
-			funcinst(f, IARG, qbetype(t).base, argvals[i], t->value);
+			t = param ? param->type : arg->type;
+			funcinst(f, IARG, abiclass(t), argvals[i], t->value);
+			if (param)
+				param = param->next;
 		}
 		e = e->base;
 		if (e->kind == EXPRUNARY && e->op == TBAND) {
@@ -834,7 +950,7 @@ funcexpr(struct func *f, struct expr *e)
 			return lval.addr;
 		case TMUL:
 			r = funcexpr(f, e->base);
-			return funcload(f, e->type, (struct lvalue){r});
+			return funcload(f, e->type, e->qual, (struct lvalue){r});
 		case TSUB:
 			r = funcexpr(f, e->base);
 			return funcinst(f, INEG, qbetype(e->type).base, r, NULL);
@@ -993,10 +1109,19 @@ funcexpr(struct func *f, struct expr *e)
 		case BUILTINVAARG:
 			if (e->toeval)
 				funcexpr(f, e->toeval);
-			/* https://todo.sr.ht/~mcf/cproc/52 */
-			if (!(e->type->prop & PROPSCALAR))
-				error(&tok.loc, "va_arg with non-scalar type is not yet supported");
 			l = funcexpr(f, e->base);
+			if (!(e->type->prop & PROPSCALAR)) {
+				struct value *layout;
+
+				if (strcmp(targ->name, "ie64") != 0)
+					error(&tok.loc, "va_arg with non-scalar type is not yet supported");
+				if (e->type->align != 1 && e->type->align != 2
+				&& e->type->align != 4 && e->type->align != 8
+				&& e->type->align != 16)
+					error(&tok.loc, "va_arg aggregate alignment is not supported");
+				layout = mkintconst(e->type->size << 8 | e->type->align);
+				return funcinst(f, IIE64VAARG, ptrclass, l, layout);
+			}
 			return funcinst(f, IVAARG, qbetype(e->type).base, l, NULL);
 		case BUILTINALLOCA:
 			l = funcexpr(f, e->base);
@@ -1269,8 +1394,10 @@ emitinst(struct inst **instp, struct inst **instend)
 		putchar(' ');
 	}
 	fputs(instname[inst->kind], stdout);
-	putchar(' ');
-	emitvalue(inst->arg[0]);
+	if (inst->arg[0]) {
+		putchar(' ');
+		emitvalue(inst->arg[0]);
+	}
 	++instp;
 	op = inst->kind;
 	switch (op) {
@@ -1359,7 +1486,7 @@ emitfunc(struct func *f, bool global)
 		puts("export");
 	fputs("function ", stdout);
 	if (f->type->base != &typevoid) {
-		emitclass(qbetype(f->type->base).base, f->type->base->value);
+		emitclass(abiclass(f->type->base), f->type->base->value);
 		putchar(' ');
 	}
 	emitname(f->decl->value);
@@ -1367,7 +1494,7 @@ emitfunc(struct func *f, bool global)
 	for (p = f->type->u.func.params, v = f->paramtemps; p; p = p->next, ++v) {
 		if (p != f->type->u.func.params)
 			fputs(", ", stdout);
-		emitclass(qbetype(p->type).base, p->type->value);
+		emitclass(abiclass(p->type), p->type->value);
 		putchar(' ');
 		emitname(v);
 	}

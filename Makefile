@@ -9,7 +9,10 @@ objdir=.
 -include config.mk
 
 .PHONY: all
-all: $(objdir)/cproc $(objdir)/cproc-qbe
+all: $(objdir)/cproc $(objdir)/cproc-qbe ie64-cproc
+
+ie64-cproc: $(objdir)/cproc $(objdir)/cproc-qbe
+	chmod +x $@
 
 DRIVER_SRC=\
 	driver.c\
@@ -77,12 +80,14 @@ $(objdir)/util.o    : util.c    util.h          $(stagedeps) ; $(CC) $(CFLAGS) -
 .PHONY: stage2
 stage2: all
 	@mkdir -p $@
-	$(MAKE) objdir=$@ stagedeps='cproc cproc-qbe' CC=$(objdir)/cproc LDFLAGS='$(LDFLAGS) -s'
+	PATH=../qbe:$$PATH $(MAKE) objdir=$@ stagedeps='cproc cproc-qbe' CC=$(objdir)/cproc LDFLAGS='$(LDFLAGS) -s'
+	cp ie64-cproc $@/ie64-cproc
 
 .PHONY: stage3
 stage3: stage2
 	@mkdir -p $@
-	$(MAKE) objdir=$@ stagedeps='stage2/cproc stage2/cproc-qbe' CC=$(objdir)/stage2/cproc LDFLAGS='$(LDFLAGS) -s'
+	PATH=../qbe:$$PATH $(MAKE) objdir=$@ stagedeps='stage2/cproc stage2/cproc-qbe' CC=$(objdir)/stage2/cproc LDFLAGS='$(LDFLAGS) -s'
+	cp ie64-cproc $@/ie64-cproc
 
 .PHONY: bootstrap
 bootstrap: stage2 stage3
@@ -92,6 +97,18 @@ bootstrap: stage2 stage3
 .PHONY: check
 check: all
 	@CCQBE=./cproc-qbe ./runtests
+
+.PHONY: check-ie64 check-ie64-driver check-ie64-runtime generate-ie64-runtime
+check-ie64: check-ie64-driver check-ie64-runtime
+
+check-ie64-driver: all stage2
+	@./tools/test-ie64-driver.sh
+
+check-ie64-runtime: all
+	@./tools/check-ie64-runtime.sh
+
+generate-ie64-runtime: all
+	@./tools/generate-ie64-runtime.sh
 
 .PHONY: check-stage2
 check-stage2: all

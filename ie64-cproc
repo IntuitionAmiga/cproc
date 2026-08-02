@@ -1,0 +1,187 @@
+#!/usr/bin/env bash
+# IE64 development-tree flat-image driver.
+set -euo pipefail
+
+die() { printf 'ie64-cproc: %s\n' "$*" >&2; exit 1; }
+usage() { die "usage: ie64-cproc [-E|-S|-c] [-nostdlib] [-I dir] [-D name] [-o output] input..."; }
+
+self=$0
+if [[ $self != /* ]]; then
+	self=$(command -v -- "$self") || die "cannot resolve executable"
+fi
+self=$(readlink -f -- "$self") || die "cannot resolve executable"
+base=$(cd -- "$(dirname -- "$self")" && pwd)
+
+sdk=
+probe=$base
+while [[ $probe != / ]]; do
+	if [[ -d $probe/../IntuitionEngine/sdk ]]; then
+		sdk=$(cd -- "$probe/../IntuitionEngine/sdk" && pwd)
+		break
+	fi
+	probe=$(dirname -- "$probe")
+done
+[[ -n $sdk ]] || die "cannot find sibling IntuitionEngine/sdk from executable path"
+[[ -d $sdk/include ]] || die "missing SDK include directory"
+
+mode=link
+nostdlib=0
+output=
+cppargs=()
+inputs=()
+while (($#)); do
+	case $1 in
+	-E|-S|-c) mode=${1#-} ;;
+	-nostdlib) nostdlib=1 ;;
+	-o)
+		shift
+		(($#)) || usage
+		output=$1
+		;;
+	-I|-D)
+		option=$1
+		shift
+		(($#)) || usage
+		cppargs+=("$option" "$1")
+		;;
+	-I*|-D*) cppargs+=("$1") ;;
+	--version) printf '%s\n' 'ie64-cproc 1'; exit 0 ;;
+	-*) die "unsupported option $1" ;;
+	*) inputs+=("$1") ;;
+	esac
+	shift
+done
+((${#inputs[@]})) || usage
+
+if [[ -n $output ]]; then
+	outputpath=$(readlink -f -- "$output") || die "cannot resolve output path"
+	if [[ $mode == link ]]; then
+		for input in "${inputs[@]}"; do
+			inputpath=$(readlink -f -- "$input") || die "cannot resolve input path"
+			[[ $outputpath != "$inputpath" ]] ||
+				die "output path resolves to input: $output"
+		done
+	elif [[ $mode == S || $mode == c ]] && ((${#inputs[@]} == 1)); then
+		inputpath=$(readlink -f -- "${inputs[0]}") || die "cannot resolve input path"
+		[[ $outputpath != "$inputpath" ]] ||
+			die "output path resolves to input: $output"
+	fi
+fi
+
+if [[ $mode != link ]]; then
+	for input in "${inputs[@]}"; do
+		[[ $input == *.c ]] || die "-$mode accepts only C inputs"
+	done
+fi
+
+[[ -x $base/cproc ]] || die "missing cproc driver: $base/cproc"
+if [[ $mode == E ]]; then
+	args=(-E -I "$sdk/include" "${cppargs[@]}")
+	[[ -z $output ]] || args+=(-o "$output")
+	exec "$base/cproc" "${args[@]}" "${inputs[@]}"
+fi
+
+qbe=
+probe=$base
+while [[ $probe != / ]]; do
+	if [[ -x $probe/../qbe/qbe ]]; then
+		qbe=$(cd -- "$probe/../qbe" && pwd)/qbe
+		break
+	fi
+	probe=$(dirname -- "$probe")
+done
+[[ -n $qbe ]] || die "cannot find sibling qbe/qbe from executable path"
+[[ -x $base/cproc-qbe ]] || die "missing cproc frontend: $base/cproc-qbe"
+
+if [[ $mode == link ]]; then
+	[[ -x $sdk/bin/ie64asm ]] || die "missing SDK assembler"
+	if ((nostdlib == 0)); then
+		[[ -f $sdk/lib/ie64-cproc/crt0.s ]] || die "missing SDK crt0.s"
+		[[ -f $sdk/lib/ie64-cproc/libie64c.s ]] || die "missing SDK libie64c.s"
+	fi
+fi
+
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/ie64-cproc.XXXXXX") || die "mktemp failed"
+trap 'rm -rf "$tmp"' EXIT HUP INT TERM
+units=()
+cunits=()
+asmunits=()
+cinputs=()
+n=0
+for input in "${inputs[@]}"; do
+	case $input in
+	*.c)
+		unit=$tmp/unit$n.s
+		inputdir=$(cd -- "$(dirname -- "$input")" && pwd -P)
+		inputpath=$inputdir/$(basename -- "$input")
+		prefix=u$(printf '%s\0' "$inputpath" "$mode" "$output" "$n" \
+			"${cppargs[@]}" | sha256sum | cut -c1-16)
+		"$base/cproc" -E -I "$sdk/include" "${cppargs[@]}" "$input" |
+			"$base/cproc-qbe" -t ie64 -fie64-unit-prefix="$prefix" |
+			"$qbe" -t ie64 -fie64-unit-prefix="$prefix" -o "$unit"
+		units+=("$unit")
+		cunits+=("$unit")
+		cinputs+=("$input")
+		((n += 1))
+		;;
+	*.s)
+		units+=("$input")
+		asmunits+=("$input")
+		;;
+	*) die "unsupported input $input (expected .c or .s)" ;;
+	esac
+done
+
+if [[ $mode == S || $mode == c ]]; then
+	if [[ -n $output && $n -ne 1 ]]; then
+		die "-o with multiple C inputs is invalid for -$mode"
+	fi
+	if [[ -n $output ]]; then
+		cp -- "${units[0]}" "$output"
+	else
+		for ((i = 0; i < n; i++)); do
+			cp -- "${units[i]}" "${cinputs[i]%.c}.s"
+		done
+	fi
+	exit 0
+fi
+
+[[ -n $output ]] || output=a.ie64
+merged=$tmp/program.s
+linkunits=("${cunits[@]}" "${asmunits[@]}")
+if ((nostdlib == 0)); then
+	hasmain=0
+	for unit in "${linkunits[@]}"; do
+		if grep -Eq '^[[:space:]]*main[[:space:]]*:' "$unit"; then
+			hasmain=1
+			break
+		fi
+	done
+	((hasmain)) || die "missing main in ordinary link"
+	{
+		printf '%s\n' 'org 0x1000'
+		cat -- "$sdk/lib/ie64-cproc/crt0.s"
+		printf '\n'
+		for unit in "${linkunits[@]}"; do
+			cat -- "$unit"
+			printf '\n'
+		done
+		cat -- "$sdk/lib/ie64-cproc/libie64c.s"
+		printf '\n'
+		printf '%s\n' '__ie64_heap_start:'
+	} >"$merged"
+else
+	{
+		for unit in "${linkunits[@]}"; do
+			cat -- "$unit"
+			printf '\n'
+		done
+	} >"$merged"
+fi
+image=$tmp/program.ie64
+"$sdk/bin/ie64asm" -Werror -I "$sdk/include" -o "$image" "$merged"
+size=$(wc -c <"$image")
+if ((size > 0x8f000 - 0x1000)); then
+	die "linked image overlaps reserved stack range [0x8F000, 0x9F000)"
+fi
+mv -- "$image" "$output"

@@ -508,7 +508,11 @@ done:
 	case SPECBITINT|SPECUNSIGNED:           t = mkbitinttype(bits, false); break;
 	case SPECFLOAT:                         t = &typefloat;   break;
 	case SPECDOUBLE:                        t = &typedouble;  break;
-	case SPECLONG|SPECDOUBLE:               t = &typeldouble; break;
+	case SPECLONG|SPECDOUBLE:
+		if (targ->nolongdouble)
+			error(&tok.loc, "long double is not supported on this target");
+		t = &typeldouble;
+		break;
 	default:
 		error(&tok.loc, "invalid combination of type specifiers");
 	}

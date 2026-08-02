@@ -154,6 +154,23 @@ enum builtinkind {
 	BUILTINVASTART,
 };
 
+enum ie64builtinkind {
+	IE64B_NONE,
+	IE64B_NOP, IE64B_HALT, IE64B_SEI, IE64B_CLI,
+	IE64B_TLBFLUSH, IE64B_SUAEN, IE64B_SUADIS, IE64B_ERET, IE64B_RTI,
+	IE64B_SMODE, IE64B_FMOVSR, IE64B_FMOVCR, IE64B_TLBINVAL,
+	IE64B_WAIT, IE64B_SYSCALL, IE64B_MFCR, IE64B_FMOVECR,
+	IE64B_DMOVECR, IE64B_FMOVSC, IE64B_FMOVCC, IE64B_MTCR,
+	IE64B_FMOD, IE64B_DMOD, IE64B_FABS, IE64B_DABS, IE64B_FINT, IE64B_DINT,
+	IE64B_FCVTSD, IE64B_FCVTDS, IE64B_FSIN, IE64B_FCOS,
+	IE64B_FTAN, IE64B_FATAN, IE64B_FLOG, IE64B_FEXP, IE64B_FPOW,
+	IE64B_FSQRT, IE64B_DSIN, IE64B_DCOS, IE64B_DTAN, IE64B_DATAN,
+	IE64B_DLOG, IE64B_DEXP, IE64B_DPOW, IE64B_DSQRT,
+	IE64B_XCHG, IE64B_FAA, IE64B_FAND, IE64B_FOR, IE64B_FXOR,
+	IE64B_CAS,
+	IE64B_COUNT,
+};
+
 struct decl {
 	char *name;
 	enum declkind kind;
@@ -249,6 +266,7 @@ struct expr {
 		struct {
 			struct expr *args;
 			size_t nargs;
+			enum ie64builtinkind ie64;
 		} call;
 		struct {
 			struct bitfield bits;
@@ -349,6 +367,7 @@ extern struct type typellong, typeullong;
 extern struct type typefloat, typedouble, typeldouble;
 extern struct type typenullptr;
 extern struct type *typeadjvalist;
+extern const char *ie64unitprefix;
 
 /* targ */
 
@@ -357,6 +376,7 @@ struct target {
 	struct type *typevalist;
 	struct type *typewchar;
 	int signedchar;
+	int nolongdouble;
 };
 
 extern const struct target *targ;

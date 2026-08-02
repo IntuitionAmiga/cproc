@@ -37,6 +37,18 @@ static const struct target alltargs[] = {
 		},
 		.typewchar = &typeint,
 	},
+	{
+		/* Frozen IE64 bare-metal LP64 ABI. */
+		.name = "ie64",
+		.typevalist = &(struct type){
+			.kind = TYPEPOINTER, .prop = PROPSCALAR,
+			.align = 8, .size = 8,
+			.base = &typeuchar,
+		},
+		.typewchar = &typeuint,
+		.signedchar = 1,
+		.nolongdouble = 1,
+	},
 };
 
 void

@@ -1,0 +1,80 @@
+export
+function l $float_to_long(s %.1) {
+@start.1
+	%.2 =l alloc4 4
+	stores %.1, %.2
+@body.2
+	%.3 =s loads %.2
+	%.4 =l stosi %.3
+	ret %.4
+}
+export
+function l $float_to_ulong(s %.1) {
+@start.3
+	%.2 =l alloc4 4
+	stores %.1, %.2
+@body.4
+	%.3 =s loads %.2
+	%.4 =l stoui %.3
+	ret %.4
+}
+export
+function l $double_to_long(d %.1) {
+@start.5
+	%.2 =l alloc8 8
+	stored %.1, %.2
+@body.6
+	%.3 =d loadd %.2
+	%.4 =l dtosi %.3
+	ret %.4
+}
+export
+function l $double_to_ulong(d %.1) {
+@start.7
+	%.2 =l alloc8 8
+	stored %.1, %.2
+@body.8
+	%.3 =d loadd %.2
+	%.4 =l dtoui %.3
+	ret %.4
+}
+export
+function s $long_to_float(l %.1) {
+@start.9
+	%.2 =l alloc8 8
+	storel %.1, %.2
+@body.10
+	%.3 =l loadl %.2
+	%.4 =s sltof %.3
+	ret %.4
+}
+export
+function s $ulong_to_float(l %.1) {
+@start.11
+	%.2 =l alloc8 8
+	storel %.1, %.2
+@body.12
+	%.3 =l loadl %.2
+	%.4 =s ultof %.3
+	ret %.4
+}
+export
+function d $long_to_double(l %.1) {
+@start.13
+	%.2 =l alloc8 8
+	storel %.1, %.2
+@body.14
+	%.3 =l loadl %.2
+	%.4 =d sltof %.3
+	ret %.4
+}
+export
+function d $ulong_to_double(l %.1) {
+@start.15
+	%.2 =l alloc8 8
+	storel %.1, %.2
+@body.16
+	%.3 =l loadl %.2
+	%.4 =d ultof %.3
+	ret %.4
+}

@@ -1,0 +1,2 @@
+org 0x8f001
+	halt

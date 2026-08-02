@@ -1,0 +1,28 @@
+export
+function l $f() {
+@start.1
+	%.1 =l alloc8 8
+	%.3 =l alloc8 8
+@body.2
+	%.2 =l loadv extern $x
+	storel %.2, %.1
+	%.4 =l loadv extern $x
+	storel %.4, %.3
+	%.5 =l loadl %.1
+	%.6 =l loadl %.3
+	%.7 =l add %.5, %.6
+	storevl %.7, extern $x
+	%.8 =l extsw 3
+	storevl %.8, extern $x
+	%.9 =l loadl %.3
+	ret %.9
+}
+export
+function $discard() {
+@start.3
+@body.4
+	%.1 =l loadv extern $x
+	%.2 =l loadv extern $x
+	ret
+}
+export data $x = align 8 { z 8 }

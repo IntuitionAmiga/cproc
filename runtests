@@ -29,7 +29,11 @@ for test ; do
 	esac
 	if [ -f "$name.qbe" ] ; then
 		want=$name.qbe
-		set -- $CCQBE -t $arch -o "$got" "$test"
+		if [ -f "$name.args" ] ; then
+			set -- $CCQBE -t $arch $(cat "$name.args") -o "$got" "$test"
+		else
+			set -- $CCQBE -t $arch -o "$got" "$test"
+		fi
 	elif [ -f "$name.pp" ] ; then
 		want=$name.pp
 		set -- $CCQBE -t $arch -E -o "$got" "$test"

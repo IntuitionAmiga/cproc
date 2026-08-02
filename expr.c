@@ -763,8 +763,11 @@ primaryexpr(struct scope *s)
 				e->type = &typedouble;
 			else if ((end[0] == 'f' || end[0] == 'F') && !end[1])
 				e->type = &typefloat;
-			else if ((end[0] == 'l' || end[0] == 'L') && !end[1])
+			else if ((end[0] == 'l' || end[0] == 'L') && !end[1]) {
+				if (targ->nolongdouble)
+					error(&tok.loc, "long double is not supported on this target");
 				e->type = &typeldouble;
+			}
 			else
 				error(&tok.loc, "invalid floating constant suffix '%s'", end);
 		} else {
@@ -960,6 +963,166 @@ builtinfunc(struct scope *s, enum builtinkind kind)
 	return e;
 }
 
+struct ie64builtin {
+	const char *name;
+	enum ie64builtinkind kind;
+	int immarg;
+	unsigned long long maximm;
+};
+
+static const struct ie64builtin ie64builtins[] = {
+	{"__builtin_ie64_nop", IE64B_NOP, -1, 0},
+	{"__builtin_ie64_halt", IE64B_HALT, -1, 0},
+	{"__builtin_ie64_sei", IE64B_SEI, -1, 0},
+	{"__builtin_ie64_cli", IE64B_CLI, -1, 0},
+	{"__builtin_ie64_tlbflush", IE64B_TLBFLUSH, -1, 0},
+	{"__builtin_ie64_suaen", IE64B_SUAEN, -1, 0},
+	{"__builtin_ie64_suadis", IE64B_SUADIS, -1, 0},
+	{"__builtin_ie64_eret", IE64B_ERET, -1, 0},
+	{"__builtin_ie64_rti", IE64B_RTI, -1, 0},
+	{"__builtin_ie64_smode", IE64B_SMODE, -1, 0},
+	{"__builtin_ie64_fmovsr", IE64B_FMOVSR, -1, 0},
+	{"__builtin_ie64_fmovcr", IE64B_FMOVCR, -1, 0},
+	{"__builtin_ie64_tlbinval", IE64B_TLBINVAL, -1, 0},
+	{"__builtin_ie64_wait", IE64B_WAIT, 0, 0xffffffffu},
+	{"__builtin_ie64_syscall", IE64B_SYSCALL, 0, 0xffffffffu},
+	{"__builtin_ie64_mfcr", IE64B_MFCR, 0, 15},
+	{"__builtin_ie64_fmovecr", IE64B_FMOVECR, 0, 15},
+	{"__builtin_ie64_dmovecr", IE64B_DMOVECR, 0, 15},
+	{"__builtin_ie64_fmovsc", IE64B_FMOVSC, -1, 0},
+	{"__builtin_ie64_fmovcc", IE64B_FMOVCC, -1, 0},
+	{"__builtin_ie64_mtcr", IE64B_MTCR, 0, 15},
+	{"__builtin_ie64_fmod", IE64B_FMOD, -1, 0},
+	{"__builtin_ie64_dmod", IE64B_DMOD, -1, 0},
+	{"__builtin_ie64_fabs", IE64B_FABS, -1, 0},
+	{"__builtin_ie64_dabs", IE64B_DABS, -1, 0},
+	{"__builtin_ie64_fint", IE64B_FINT, -1, 0},
+	{"__builtin_ie64_dint", IE64B_DINT, -1, 0},
+	{"__builtin_ie64_fcvtsd", IE64B_FCVTSD, -1, 0},
+	{"__builtin_ie64_fcvtds", IE64B_FCVTDS, -1, 0},
+	{"__builtin_ie64_fsin", IE64B_FSIN, -1, 0},
+	{"__builtin_ie64_fcos", IE64B_FCOS, -1, 0},
+	{"__builtin_ie64_ftan", IE64B_FTAN, -1, 0},
+	{"__builtin_ie64_fatan", IE64B_FATAN, -1, 0},
+	{"__builtin_ie64_flog", IE64B_FLOG, -1, 0},
+	{"__builtin_ie64_fexp", IE64B_FEXP, -1, 0},
+	{"__builtin_ie64_fpow", IE64B_FPOW, -1, 0},
+	{"__builtin_ie64_fsqrt", IE64B_FSQRT, -1, 0},
+	{"__builtin_ie64_dsin", IE64B_DSIN, -1, 0},
+	{"__builtin_ie64_dcos", IE64B_DCOS, -1, 0},
+	{"__builtin_ie64_dtan", IE64B_DTAN, -1, 0},
+	{"__builtin_ie64_datan", IE64B_DATAN, -1, 0},
+	{"__builtin_ie64_dlog", IE64B_DLOG, -1, 0},
+	{"__builtin_ie64_dexp", IE64B_DEXP, -1, 0},
+	{"__builtin_ie64_dpow", IE64B_DPOW, -1, 0},
+	{"__builtin_ie64_dsqrt", IE64B_DSQRT, -1, 0},
+	{"__builtin_ie64_xchg", IE64B_XCHG, -1, 0},
+	{"__builtin_ie64_faa", IE64B_FAA, -1, 0},
+	{"__builtin_ie64_fand", IE64B_FAND, -1, 0},
+	{"__builtin_ie64_for", IE64B_FOR, -1, 0},
+	{"__builtin_ie64_fxor", IE64B_FXOR, -1, 0},
+	{"__builtin_ie64_cas", IE64B_CAS, -1, 0},
+};
+
+static const char *const ie64builtinsig[IE64B_COUNT] = {
+	[IE64B_NOP] = "v", [IE64B_HALT] = "v",
+	[IE64B_SEI] = "v", [IE64B_CLI] = "v",
+	[IE64B_TLBFLUSH] = "v", [IE64B_SUAEN] = "v",
+	[IE64B_SUADIS] = "v", [IE64B_ERET] = "v", [IE64B_RTI] = "v",
+	[IE64B_SMODE] = "U", [IE64B_FMOVSR] = "U", [IE64B_FMOVCR] = "U",
+	[IE64B_TLBINVAL] = "vU", [IE64B_WAIT] = "vu",
+	[IE64B_SYSCALL] = "Uu", [IE64B_MFCR] = "Uu",
+	[IE64B_FMOVECR] = "fu", [IE64B_DMOVECR] = "du",
+	[IE64B_FMOVSC] = "vu", [IE64B_FMOVCC] = "vu",
+	[IE64B_MTCR] = "vuU", [IE64B_FMOD] = "fff", [IE64B_DMOD] = "ddd",
+	[IE64B_FABS] = "ff", [IE64B_DABS] = "dd",
+	[IE64B_FINT] = "ff", [IE64B_DINT] = "dd",
+	[IE64B_FCVTSD] = "df", [IE64B_FCVTDS] = "fd",
+	[IE64B_FSIN] = "ff", [IE64B_FCOS] = "ff", [IE64B_FTAN] = "ff",
+	[IE64B_FATAN] = "ff", [IE64B_FLOG] = "ff", [IE64B_FEXP] = "ff",
+	[IE64B_FPOW] = "fff", [IE64B_FSQRT] = "ff",
+	[IE64B_DSIN] = "dd", [IE64B_DCOS] = "dd", [IE64B_DTAN] = "dd",
+	[IE64B_DATAN] = "dd", [IE64B_DLOG] = "dd", [IE64B_DEXP] = "dd",
+	[IE64B_DPOW] = "ddd", [IE64B_DSQRT] = "dd",
+	[IE64B_XCHG] = "UpU", [IE64B_FAA] = "UpU",
+	[IE64B_FAND] = "UpU", [IE64B_FOR] = "UpU", [IE64B_FXOR] = "UpU",
+	[IE64B_CAS] = "UpUU",
+};
+
+static bool
+ie64builtintype(struct type *t, int code)
+{
+	switch (code) {
+	case 'v': return t == &typevoid;
+	case 'u': return typesame(t, &typeuint);
+	case 'U': return typesame(t, &typeulong);
+	case 'f': return typesame(t, &typefloat);
+	case 'd': return typesame(t, &typedouble);
+	case 'p':
+		return t->kind == TYPEPOINTER && typesame(t->base, &typeulong)
+			&& t->qual == QUALVOLATILE;
+	default: fatal("internal error: invalid IE64 builtin signature");
+	}
+}
+
+static bool
+ie64builtindecl(struct type *t, const char *sig)
+{
+	struct decl *p;
+
+	if (t->kind != TYPEFUNC || t->u.func.isvararg
+	|| !ie64builtintype(t->base, *sig++))
+		return false;
+	for (p=t->u.func.params; p && *sig; p=p->next, sig++)
+		if (!ie64builtintype(p->type, *sig))
+			return false;
+	return !p && !*sig;
+}
+
+static struct decl *
+calleedecl(struct expr *e)
+{
+	if (e->kind == EXPRUNARY && e->op == TBAND)
+		e = e->base;
+	return e->kind == EXPRIDENT ? e->u.ident.decl : NULL;
+}
+
+static void
+recognizeie64builtin(struct expr *call)
+{
+	const struct ie64builtin *b;
+	struct decl *d;
+	struct expr **argp, *arg, *next;
+	int n;
+
+	if (strcmp(targ->name, "ie64") != 0 || !(d = calleedecl(call->base)))
+		return;
+	for (b=ie64builtins; b<ie64builtins + countof(ie64builtins); b++)
+		if (strcmp(d->name, b->name) == 0)
+			break;
+	if (b == ie64builtins + countof(ie64builtins))
+		return;
+	if (!ie64builtindecl(d->type, ie64builtinsig[b->kind]))
+		error(&tok.loc, "%s has an incompatible declaration", b->name);
+	call->u.call.ie64 = b->kind;
+	if (b->immarg < 0)
+		return;
+	argp = &call->u.call.args;
+	for (n=0; n<b->immarg; n++)
+		argp = &(*argp)->next;
+	arg = *argp;
+	next = arg->next;
+	arg = eval(arg);
+	arg->next = next;
+	*argp = arg;
+	if (arg->kind != EXPRCONST || !(arg->type->prop & PROPINT))
+		error(&tok.loc, "%s argument %d must be an integer constant expression",
+			b->name, b->immarg + 1);
+	if (arg->u.constant.u > b->maximm)
+		error(&tok.loc, "%s argument %d is outside the supported immediate range",
+			b->name, b->immarg + 1);
+}
+
 static struct expr *
 mkincdecexpr(enum tokenkind op, struct expr *base, bool post)
 {
@@ -1022,6 +1185,7 @@ postfixexpr(struct scope *s, struct expr *r)
 			e = mkexpr(EXPRCALL, t->base, r);
 			e->u.call.args = NULL;
 			e->u.call.nargs = 0;
+			e->u.call.ie64 = IE64B_NONE;
 			p = t->u.func.params;
 			end = &e->u.call.args;
 			while (tok.kind != TRPAREN) {
@@ -1042,6 +1206,7 @@ postfixexpr(struct scope *s, struct expr *r)
 			if (p && !t->u.func.isvararg)
 				error(&tok.loc, "not enough arguments for function call");
 			e = decay(e);
+			recognizeie64builtin(e);
 			next();
 			break;
 		case TPERIOD:

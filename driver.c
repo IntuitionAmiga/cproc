@@ -401,6 +401,9 @@ main(int argc, char *argv[])
 	} else if (hasprefix(target, "riscv64-")) {
 		arch = "riscv64";
 		qbearch = "rv64";
+	} else if (hasprefix(target, "ie64-")) {
+		arch = "ie64";
+		qbearch = "ie64";
 	} else {
 		fatal("unsupported target '%s'", target);
 	}

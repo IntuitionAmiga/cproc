@@ -92,6 +92,14 @@ riscv64-*)
 	"-D", "__riscv_flen=64",
 '
 	;;
+ie64-*)
+	model=lp64
+	defines=$defines'
+	"-D", "__ie64__",
+	"-D", "__IE64__=1",
+	"-D", "__STDC_HOSTED__=0",
+'
+	;;
 *)
 	fail "unsupported target '$target'";;
 esac
@@ -112,6 +120,12 @@ lp64)
 esac
 
 case "$target" in
+ie64-*)
+	# A flat IE64 image is linked by ie64-cproc, not the host linker.
+	: ${DEFAULT_CPP:=cpp}
+	startfiles=0
+	endfiles=0
+	;;
 *-linux-*musl*)
 	test "${DEFAULT_LDSO+set}" || case "$target" in
 	x86_64*)  DEFAULT_LDSO=/lib/ld-musl-x86_64.so.1  ;;

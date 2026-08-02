@@ -1,0 +1,87 @@
+export
+function l $rsb(l %.1) {
+@start.1
+	%.2 =l alloc4 1
+	storeb %.1, %.2
+@body.2
+	%.3 =w loadsb %.2
+	%.4 =l extsb %.3
+	ret %.4
+}
+export
+function l $rub(l %.1) {
+@start.3
+	%.2 =l alloc4 1
+	storeb %.1, %.2
+@body.4
+	%.3 =w loadub %.2
+	%.4 =l extub %.3
+	ret %.4
+}
+export
+function l $rsh(l %.1) {
+@start.5
+	%.2 =l alloc4 2
+	storeh %.1, %.2
+@body.6
+	%.3 =w loadsh %.2
+	%.4 =l extsh %.3
+	ret %.4
+}
+export
+function l $ruh(l %.1) {
+@start.7
+	%.2 =l alloc4 2
+	storeh %.1, %.2
+@body.8
+	%.3 =w loaduh %.2
+	%.4 =l extuh %.3
+	ret %.4
+}
+export
+function l $rsw(l %.1) {
+@start.9
+	%.2 =l alloc4 4
+	storew %.1, %.2
+@body.10
+	%.3 =w loadw %.2
+	%.4 =l extsw %.3
+	ret %.4
+}
+export
+function l $ruw(l %.1) {
+@start.11
+	%.2 =l alloc4 4
+	storew %.1, %.2
+@body.12
+	%.3 =w loadw %.2
+	%.4 =l extuw %.3
+	ret %.4
+}
+export
+function l $call_narrow() {
+@start.13
+@body.14
+	%.1 =w neg 1
+	%.2 =w neg 2
+	%.3 =w neg 3
+	%.4 =w neg 4
+	%.5 =w neg 5
+	%.6 =w neg 6
+	%.7 =w cnew 7, 0
+	%.8 =l extsb %.1
+	%.9 =l extub 255
+	%.10 =l extsh %.2
+	%.11 =l extuh 65535
+	%.12 =l extsw %.3
+	%.13 =l extuw 4294967295
+	%.14 =l extsb %.4
+	%.15 =l extub 254
+	%.16 =l extsh %.5
+	%.17 =l extuh 65534
+	%.18 =l extsw %.6
+	%.19 =l extuw 4294967294
+	%.20 =l extub %.7
+	%.21 =l call extern $narrow(l %.8, l %.9, l %.10, l %.11, l %.12, l %.13, l %.14, l %.15, l %.16, l %.17, l %.18, l %.19, l %.20)
+	ret %.21
+}

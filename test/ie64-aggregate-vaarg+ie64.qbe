@@ -1,0 +1,20 @@
+export
+function l $next_pair(l %.1, ...) {
+@start.1
+	%.2 =l alloc4 4
+	storew %.1, %.2
+	%.3 =l alloc8 8
+	%.4 =l alloc8 16
+@body.2
+	vastart %.3
+	%.5 =l ie64vaarg %.3, 4104
+	%.6 =l loadl %.5
+	storel %.6, %.4
+	%.7 =l add %.5, 8
+	%.8 =l add %.4, 8
+	%.9 =l loadl %.7
+	storel %.9, %.8
+	%.10 =l add %.4, 8
+	%.11 =l loadl %.10
+	ret %.11
+}
