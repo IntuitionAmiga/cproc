@@ -1,0 +1,26 @@
+export section ".special" data $section_object = align 4 { w 1, }
+export section ".first" data $section_first = align 4 { w 2, }
+export data $section_second = align 4 { w 3, }
+export hidden data $hidden_interleaved = align 4 { w 4, }
+export
+function $constructor() {
+@start.1
+@body.2
+	ret
+}
+section ".init_array.00101"
+data $__cproc_ctor_0 = align 8 { l $constructor }
+export
+function $destructor() {
+@start.3
+@body.4
+	ret
+}
+section ".fini_array.00202"
+data $__cproc_dtor_1 = align 8 { l $destructor }
+weak data $weak_object = align 4 { z 4 }
+export hidden data $hidden_object = align 4 { z 4 }
+weak data $weak_first = align 4 { z 4 }
+export data $weak_second = align 4 { z 4 }
+export hidden data $hidden_first = align 4 { z 4 }
+export data $hidden_second = align 4 { z 4 }

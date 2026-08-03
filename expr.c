@@ -194,6 +194,7 @@ struct expr *
 exprassign(struct expr *e, struct type *t)
 {
 	struct type *et;
+	enum typequal eq, tq;
 
 	et = e->type;
 	switch (t->kind) {
@@ -202,15 +203,34 @@ exprassign(struct expr *e, struct type *t)
 			error(&tok.loc, "assignment to bool must be from arithmetic, pointer, or nullptr_t type");
 		break;
 	case TYPEPOINTER:
+		{
+		bool basescompatible;
 		if (nullpointer(e))
 			break;
 		if (et->kind != TYPEPOINTER)
 			error(&tok.loc, "assignment to pointer must be from pointer or null pointer constant");
-		if (t->base != &typevoid && et->base != &typevoid && !typecompatible(t->base, et->base))
+		basescompatible = typecompatible(t->base, et->base);
+		if (t->base->kind == TYPEARRAY && et->base->kind == TYPEARRAY) {
+			struct type targetpointer = *t, sourcepointer = *et;
+			struct type targetarray = *t->base, sourcearray = *et->base;
+			targetpointer.qual = sourcepointer.qual = QUALNONE;
+			targetarray.qual = sourcearray.qual = QUALNONE;
+			targetpointer.base = &targetarray;
+			sourcepointer.base = &sourcearray;
+			basescompatible = typecompatible(&targetpointer, &sourcepointer);
+		}
+		if (t->base != &typevoid && et->base != &typevoid && !basescompatible)
 			error(&tok.loc, "base types of pointer assignment must be compatible or void");
-		if ((et->qual & t->qual) != et->qual)
+		eq = et->qual;
+		tq = t->qual;
+		if (et->base->kind == TYPEARRAY)
+			eq |= et->base->qual;
+		if (t->base->kind == TYPEARRAY)
+			tq |= t->base->qual;
+		if ((eq & tq) != eq)
 			error(&tok.loc, "assignment to pointer discards qualifiers");
 		break;
+		}
 	case TYPENULLPTR:
 		if (!nullpointer(e))
 			error(&tok.loc, "assignment to nullptr_t must be from null pointer constant or expression with type nullptr_t");
@@ -479,7 +499,7 @@ hexval(int c)
 	return -1;
 }
 
-static size_t
+size_t
 decodechar(const char *src, uint_least32_t *chr, bool *hexoct, const char *desc, struct location *loc)
 {
 	uint_least32_t c;
@@ -857,6 +877,83 @@ designator(struct scope *s, struct type *t, unsigned long long *offset)
 }
 
 static struct expr *
+builtinatomic(struct scope *s, enum builtinkind kind)
+{
+	struct expr *object, *value, *expected, *success, *failure, *e;
+	struct type *t;
+	unsigned allowed;
+
+	object = assignexpr(s);
+	if (object->type->kind != TYPEPOINTER || !(object->type->qual & QUALATOMIC))
+		error(&tok.loc, "atomic builtin requires a pointer to an atomic object");
+	t = object->type->base;
+	expected = NULL;
+	value = NULL;
+	if (kind != BUILTINATOMICLOAD) {
+		expect(TCOMMA, "after atomic object");
+		if (kind == BUILTINATOMICCOMPAREEXCHANGE) {
+			expected = assignexpr(s);
+			if (expected->type->kind != TYPEPOINTER || expected->type->qual & QUALCONST
+			|| !typecompatible(expected->type->base, t))
+				error(&tok.loc, "atomic compare-exchange expected argument has incompatible type");
+			expect(TCOMMA, "after compare-exchange expected argument");
+		}
+		value = assignexpr(s);
+		if ((kind == BUILTINATOMICFETCHADD || kind == BUILTINATOMICFETCHSUB)
+		&& t->kind == TYPEPOINTER) {
+			if (!(value->type->prop & PROPINT))
+				error(&tok.loc, "atomic pointer fetch operand must have integer type");
+			value = mkbinaryexpr(&tok.loc, TMUL, exprconvert(value, &typelong),
+				mksizeofexpr(t->base));
+		} else {
+			value = exprassign(value, t);
+		}
+	}
+	expect(TCOMMA, "before atomic memory order");
+	success = eval(assignexpr(s));
+	allowed = kind == BUILTINATOMICLOAD ? (1u<<0 | 1u<<1 | 1u<<2 | 1u<<5)
+		: kind == BUILTINATOMICSTORE ? (1u<<0 | 1u<<3 | 1u<<5) : 0x3f;
+	if (success->kind == EXPRCONST && (success->u.constant.u > 5
+	|| !(allowed & 1u << success->u.constant.u)))
+		error(&tok.loc, "invalid memory order for atomic operation");
+	failure = NULL;
+	if (kind == BUILTINATOMICCOMPAREEXCHANGE) {
+		expect(TCOMMA, "before compare-exchange failure order");
+		failure = eval(assignexpr(s));
+		if (failure->kind == EXPRCONST && (failure->u.constant.u > 5
+		|| failure->u.constant.u == 3 || failure->u.constant.u == 4))
+			error(&tok.loc, "invalid compare-exchange failure memory order");
+		if (success->kind == EXPRCONST && failure->kind == EXPRCONST) {
+			static const unsigned failureok[] = {
+				1u<<0,
+				1u<<0 | 1u<<1,
+				1u<<0 | 1u<<1 | 1u<<2,
+				1u<<0,
+				1u<<0 | 1u<<1 | 1u<<2,
+				1u<<0 | 1u<<1 | 1u<<2 | 1u<<5,
+			};
+			if (!(failureok[success->u.constant.u] & 1u << failure->u.constant.u))
+				error(&tok.loc, "compare-exchange failure order is stronger than success order");
+		}
+	}
+	e = mkexpr(EXPRBUILTIN,
+		kind == BUILTINATOMICSTORE ? &typevoid
+		: kind == BUILTINATOMICCOMPAREEXCHANGE ? &typebool : t,
+		object);
+	e->u.builtin.kind = kind;
+	object->next = expected ? expected : value ? value : success;
+	if (expected) {
+		expected->next = value;
+		value->next = success;
+	} else if (value) {
+		value->next = success;
+	}
+	if (failure)
+		success->next = failure;
+	return e;
+}
+
+static struct expr *
 builtinfunc(struct scope *s, enum builtinkind kind)
 {
 	struct expr *e, *toeval;
@@ -866,6 +963,17 @@ builtinfunc(struct scope *s, enum builtinkind kind)
 	unsigned long long offset;
 
 	switch (kind) {
+	case BUILTINATOMICLOAD:
+	case BUILTINATOMICSTORE:
+	case BUILTINATOMICEXCHANGE:
+	case BUILTINATOMICCOMPAREEXCHANGE:
+	case BUILTINATOMICFETCHADD:
+	case BUILTINATOMICFETCHSUB:
+	case BUILTINATOMICFETCHOR:
+	case BUILTINATOMICFETCHXOR:
+	case BUILTINATOMICFETCHAND:
+		e = builtinatomic(s, kind);
+		break;
 	case BUILTINALLOCA:
 		e = exprassign(assignexpr(s), &typeulong);
 		e = mkexpr(EXPRBUILTIN, mkpointertype(&typevoid, QUALNONE), e);
@@ -880,6 +988,16 @@ builtinfunc(struct scope *s, enum builtinkind kind)
 		e = assignexpr(s);
 		expect(TCOMMA, "after expression");
 		delexpr(assignexpr(s));
+		break;
+	case BUILTINCLZ:
+	case BUILTINCLZL:
+	case BUILTINCLZLL:
+		e = assignexpr(s);
+		if (!(e->type->prop & PROPINT))
+			error(&tok.loc, "count-leading-zeros argument must have integer type");
+		e = exprconvert(e, kind == BUILTINCLZ ? &typeuint : &typeulong);
+		e = mkexpr(EXPRBUILTIN, &typeint, e);
+		e->u.builtin.kind = kind;
 		break;
 	case BUILTININFF:
 		e = mkexpr(EXPRCONST, &typefloat, NULL);
@@ -1367,13 +1485,22 @@ castexpr(struct scope *s)
 	struct decl *d;
 	enum typequal tq;
 	struct expr *r, *e, **end, *toeval;
+	enum tokenkind compoundsc;
 
 	ct = NULL;
 	end = &r;
 	while (consume(TLPAREN)) {
+		compoundsc = TNONE;
+		if (tok.kind == TSTATIC || tok.kind == TREGISTER || tok.kind == TCONSTEXPR
+		|| tok.kind == TTHREAD_LOCAL) {
+			compoundsc = tok.kind;
+			next();
+		}
 		tq = QUALNONE;
 		t = typename(s, &tq, &toeval);
 		if (!t) {
+			if (compoundsc != TNONE)
+				error(&tok.loc, "storage class requires a compound literal");
 			e = expr(s);
 			expect(TRPAREN, "after expression to match '('");
 			e = postfixexpr(s, e);
@@ -1381,17 +1508,36 @@ castexpr(struct scope *s)
 		}
 		expect(TRPAREN, "after type name");
 		if (tok.kind == TLBRACE) {
+			struct init *init;
+			struct init *part;
+			if (compoundsc == TTHREAD_LOCAL)
+				error(&tok.loc, "thread_local compound literals are not supported by this target");
+			if (compoundsc == TCONSTEXPR)
+				tq |= QUALCONST;
 			e = mkexpr(EXPRCOMPOUND, t, NULL);
 			e->toeval = toeval;
 			e->qual = tq;
 			e->lvalue = true;
 			d = mkdecl(NULL, DECLOBJECT, t, tq, LINKNONE);
-			d->u.obj.storage = s == &filescope ? SDSTATIC : SDAUTO;
+			d->u.obj.storage = s == &filescope || compoundsc == TSTATIC
+				|| compoundsc == TCONSTEXPR ? SDSTATIC : SDAUTO;
 			e->u.compound.decl = d;
-			e->u.compound.init = parseinit(s, t);
+			init = parseinit(s, t);
+			if (compoundsc == TCONSTEXPR)
+				for (part = init; part; part = part->next)
+					if (eval(part->expr)->kind != EXPRCONST)
+						error(&tok.loc, "constexpr compound literal initializer is not constant");
+			e->u.compound.init = init;
+			if (s != &filescope && d->u.obj.storage == SDSTATIC) {
+				d->value = mkglobal(d);
+				emitdata(d, init);
+				d->defined = true;
+			}
 			e = postfixexpr(s, decay(e));
 			goto done;
 		}
+		if (compoundsc != TNONE)
+			error(&tok.loc, "storage class is only valid on a compound literal");
 		if (t != &typevoid && !(t->prop & PROPSCALAR))
 			error(&tok.loc, "cast type must be scalar");
 		e = mkexpr(EXPRCAST, t, NULL);
@@ -1565,6 +1711,18 @@ assignexpr(struct scope *s)
 	r = assignexpr(s);
 	if (!op)
 		return mkassignexpr(l, r);
+	if (l->qual & QUALATOMIC) {
+		struct expr *binary, *object, *order;
+		binary = mkbinaryexpr(&tok.loc, op, l, r);
+		object = mkunaryexpr(TBAND, l);
+		order = mkconstexpr(&typeint, 5);
+		e = mkexpr(EXPRBUILTIN, l->type, object);
+		e->u.builtin.kind = BUILTINATOMICCOMPOUND;
+		e->op = op;
+		object->next = binary->u.binary.r;
+		binary->u.binary.r->next = order;
+		return e;
+	}
 	/* rewrite `E1 OP= E2` as `T = &E1, *T = *T OP E2`, where T is a temporary slot */
 	if (l->kind == EXPRBITFIELD) {
 		bit = l;

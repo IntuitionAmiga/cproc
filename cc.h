@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdint.h>
 
 struct func;
 
@@ -87,6 +88,8 @@ struct member {
 
 struct type {
 	enum typekind kind;
+	char *tag;
+	struct decl *enumconsts;
 	enum typeprop prop;
 	int align;
 	unsigned long long size;
@@ -141,7 +144,20 @@ enum storageduration {
 enum builtinkind {
 	BUILTINALLOCA,
 	BUILTINCONSTANTP,
+	BUILTINATOMICLOAD,
+	BUILTINATOMICSTORE,
+	BUILTINATOMICEXCHANGE,
+	BUILTINATOMICCOMPAREEXCHANGE,
+	BUILTINATOMICFETCHADD,
+	BUILTINATOMICFETCHSUB,
+	BUILTINATOMICFETCHOR,
+	BUILTINATOMICFETCHXOR,
+	BUILTINATOMICFETCHAND,
+	BUILTINATOMICCOMPOUND,
 	BUILTINEXPECT,
+	BUILTINCLZ,
+	BUILTINCLZL,
+	BUILTINCLZLL,
 	BUILTININFF,
 	BUILTINNANF,
 	BUILTINOFFSETOF,
@@ -181,6 +197,9 @@ struct decl {
 	char *asmname;
 	bool defined;
 	bool tentative;
+	bool weak;
+	bool hidden;
+	char *section;
 	struct decl *next;
 
 	union {
@@ -193,6 +212,10 @@ struct decl {
 			/* the function might have an "inline definition" (C11 6.7.4p7) */
 			bool inlinedefn;
 			bool isnoreturn;
+			bool constructor;
+			bool destructor;
+			int constructorpriority;
+			int destructorpriority;
 		} func;
 		unsigned long long enumconst;
 		enum builtinkind builtin;
@@ -319,9 +342,12 @@ noreturn void error(const struct location *, const char *, ...);
 /* scan */
 
 void scanfrom(const char *, FILE *);
+void scanfrominclude(const char *, FILE *, size_t);
 void scanopen(void);
 void scansetloc(struct location loc);
 void scan(struct token *);
+bool scanvalidpp(const char *, size_t);
+bool scanincludeend(size_t *);
 
 /* preprocessor */
 
@@ -331,8 +357,19 @@ enum ppflags {
 };
 
 extern enum ppflags ppflags;
+extern bool ppwarningsareerrors;
 
 void ppinit(void);
+enum ppinclude {
+	PPINCLUDE_QUOTE,
+	PPINCLUDE_USER,
+	PPINCLUDE_SYSTEM,
+	PPINCLUDE_AFTER,
+};
+void ppaddinclude(enum ppinclude, const char *);
+void ppadddependency(const char *, bool);
+void ppwritedependencies(FILE *, const char *, char **, size_t, bool, bool);
+size_t decodechar(const char *, uint_least32_t *, bool *, const char *, struct location *);
 
 void next(void);
 bool peek(enum tokenkind);
@@ -367,7 +404,6 @@ extern struct type typellong, typeullong;
 extern struct type typefloat, typedouble, typeldouble;
 extern struct type typenullptr;
 extern struct type *typeadjvalist;
-extern const char *ie64unitprefix;
 
 /* targ */
 
@@ -394,12 +430,16 @@ enum attrkind {
 	ATTRDESTRUCTOR  = 1<<4,
 	ATTRPACKED      = 1<<5,
 	ATTRSECTION     = 1<<6,
+	ATTRWEAK        = 1<<7,
+	ATTRVISIBILITY  = 1<<8,
 };
 
 struct attr {
 	enum attrkind kind;
 	int align;
+	int priority;
 	char *section;
+	bool hidden;
 };
 
 bool attr(struct attr *, enum attrkind);
@@ -492,3 +532,4 @@ void funcinit(struct func *, struct decl *, struct init *, bool);
 
 void emitfunc(struct func *, bool);
 void emitdata(struct decl *, struct init *);
+void emitarrayref(struct decl *, bool, int);

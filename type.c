@@ -137,8 +137,10 @@ typerank(struct type *t)
 	return -1;
 }
 
-bool
-typecompatible(struct type *t1, struct type *t2)
+static bool typecompatible1(struct type *, struct type *);
+
+static bool
+typecompatible1(struct type *t1, struct type *t2)
 {
 	struct decl *p1, *p2;
 	struct expr *e1, *e2;
@@ -155,32 +157,59 @@ typecompatible(struct type *t1, struct type *t2)
 		       t2->kind == TYPEENUM && t1 == t2->base;
 	}
 	switch (t1->kind) {
+	case TYPESTRUCT:
+	case TYPEUNION:
+	case TYPEENUM:
+		return false;
 	case TYPEBITINT:
 		return t1->u.arith.width == t2->u.arith.width && t1->u.arith.issigned == t2->u.arith.issigned;
 	case TYPEPOINTER:
+		if (t1->base->kind == TYPEARRAY && t2->base->kind == TYPEARRAY) {
+			enum typequal q1 = t1->qual | t1->base->qual;
+			enum typequal q2 = t2->qual | t2->base->qual;
+			if (q1 != q2)
+				return false;
+			t1 = t1->base;
+			t2 = t2->base;
+			if (!t1->incomplete && !t2->incomplete) {
+				e1 = t1->u.array.length;
+				e2 = t2->u.array.length;
+				if (e1 && e2 && e1->kind == EXPRCONST && e2->kind == EXPRCONST
+				&& e1->u.constant.u != e2->u.constant.u)
+					return false;
+			}
+			return typecompatible1(t1->base, t2->base);
+		}
 		goto derived;
 	case TYPEARRAY:
 		if (t1->incomplete || t2->incomplete)
-			goto derived;
+			return t1->qual == t2->qual && typecompatible1(t1->base, t2->base);
 		e1 = t1->u.array.length;
 		e2 = t2->u.array.length;
 		if (e1 && e2 && e1->kind == EXPRCONST && e2->kind == EXPRCONST && e1->u.constant.u != e2->u.constant.u)
 			return false;
-		goto derived;
+		/* C23 arrays and their element types are identically qualified. */
+		return t1->qual == t2->qual && typecompatible1(t1->base, t2->base);
 	case TYPEFUNC:
 		if (t1->u.func.isvararg != t2->u.func.isvararg)
 			return false;
 		for (p1 = t1->u.func.params, p2 = t2->u.func.params; p1 && p2; p1 = p1->next, p2 = p2->next) {
-			if (!typecompatible(p1->type, p2->type))
+			if (!typecompatible1(p1->type, p2->type))
 				return false;
 		}
 		if (p1 || p2)
 			return false;
 		goto derived;
 	derived:
-		return t1->qual == t2->qual && typecompatible(t1->base, t2->base);
+		return t1->qual == t2->qual && typecompatible1(t1->base, t2->base);
 	}
 	return false;
+}
+
+bool
+typecompatible(struct type *t1, struct type *t2)
+{
+	return typecompatible1(t1, t2);
 }
 
 bool

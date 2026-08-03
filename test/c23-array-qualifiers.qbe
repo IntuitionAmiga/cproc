@@ -1,0 +1,12 @@
+export
+function w $array_qualifiers(l %.1, l %.3) {
+@start.1
+	%.2 =l alloc8 8
+	storel %.1, %.2
+	%.4 =l alloc8 8
+	storel %.3, %.4
+@body.2
+	%.5 =l loadl %.2
+	storel %.5, %.4
+	ret 1
+}

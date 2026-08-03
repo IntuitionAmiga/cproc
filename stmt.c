@@ -297,6 +297,13 @@ stmt(struct func *f, struct scope *s)
 			delexpr(e);
 		} else {
 			v = NULL;
+			if (tok.kind != TSEMICOLON) {
+				e = expr(s);
+				if (e->type != &typevoid)
+					error(&tok.loc, "return expression in void function must have void type");
+				funcexpr(f, e);
+				delexpr(e);
+			}
 		}
 		funcret(f, v);
 		expect(TSEMICOLON, "after 'return' statement");

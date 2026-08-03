@@ -14,9 +14,8 @@ fail()
 }
 
 [[ -f $source ]] || fail "missing $source"
-[[ -x $root/cproc && -x $root/cproc-qbe ]] || fail "build cproc first"
+[[ -x $root/cproc-qbe ]] || fail "build cproc first"
 [[ -x $qbe ]] || fail "missing QBE executable $qbe"
 
-"$root/cproc" -E -I "$sdk/include" "$source" |
-	"$root/cproc-qbe" -t ie64 -fie64-unit-prefix=runtime |
-	"$qbe" -t ie64 -fie64-unit-prefix=runtime -o "$output"
+"$root/cproc-qbe" -t ie64 -I "$sdk/include" "$source" |
+	"$qbe" -t ie64 -o "$output"

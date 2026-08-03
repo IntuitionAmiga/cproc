@@ -1,0 +1,12 @@
+data $.Lstring.2 = align 4 { w 119 105 100 101 0 , }
+export
+function l $first() {
+@start.1
+@body.2
+	%.1 =l extsw 0
+	%.2 =l mul %.1, 4
+	%.3 =l add $.Lstring.2, %.2
+	%.4 =w loadw %.3
+	%.5 =l extuw %.4
+	ret %.5
+}

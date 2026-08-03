@@ -1,0 +1,29 @@
+export
+function l $fetch_add_pointer() {
+@start.1
+	%.1 =l alloc8 8
+	%.4 =l alloc8 8
+@body.2
+	%.2 =l extsw 3
+	%.3 =l mul %.2, 4
+	storel %.3, %.1
+	call extern $__ie64_atomic_validate_orders(l 5, l 0)
+	call extern $__ie64_atomic_fetch(l extern $pointer, l %.1, l %.4, l 8, l 0, l 0)
+	%.5 =l loadl %.4
+	ret %.5
+}
+export
+function l $fetch_sub_pointer() {
+@start.3
+	%.1 =l alloc8 8
+	%.4 =l alloc8 8
+@body.4
+	%.2 =l extsw 2
+	%.3 =l mul %.2, 4
+	storel %.3, %.1
+	call extern $__ie64_atomic_validate_orders(l 5, l 0)
+	call extern $__ie64_atomic_fetch(l extern $pointer, l %.1, l %.4, l 8, l 0, l 1)
+	%.5 =l loadl %.4
+	ret %.5
+}
+export data $pointer = align 8 { z 8 }

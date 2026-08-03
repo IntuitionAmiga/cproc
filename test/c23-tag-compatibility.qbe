@@ -1,0 +1,16 @@
+export
+function w $compatible_tags() {
+@start.1
+	%.1 =l alloc4 4
+	%.2 =l alloc4 4
+@body.2
+	jnz 1, @logic_and.6, @logic_false.4
+@logic_and.6
+	jnz 1, @logic_true.3, @logic_false.4
+@logic_true.3
+	jmp @logic_join.5
+@logic_false.4
+@logic_join.5
+	%.3 =w phi @logic_true.3 1, @logic_false.4 0
+	ret %.3
+}

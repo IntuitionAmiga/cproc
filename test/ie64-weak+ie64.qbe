@@ -1,0 +1,8 @@
+weak
+function l $weak_function() {
+@start.1
+@body.2
+	%.1 =l extsw 7
+	ret %.1
+}
+weak data $weak_object = align 4 { w 9, }

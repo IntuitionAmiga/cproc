@@ -1,0 +1,15 @@
+export
+function d $maybe_double(l %.1) {
+@start.1
+	%.2 =l alloc4 4
+	storew %.1, %.2
+	%.3 =l alloc8 8
+@body.2
+	%.4 =w loadw %.2
+	jnz %.4, @if_true.3, @if_false.4
+@if_true.3
+	stored d_1, %.3
+@if_false.4
+	%.5 =d loadd %.3
+	ret %.5
+}

@@ -1,0 +1,4 @@
+export data $logical_short_circuit = align 4 { z 4 }
+export data $conditional_right_short_circuit = align 4 { z 4 }
+export data $conditional_left_short_circuit = align 4 { z 4 }
+export data $signed_overflow_short_circuit = align 4 { z 4 }

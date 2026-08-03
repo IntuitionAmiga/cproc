@@ -1,0 +1,33 @@
+export
+function l $clz32(l %.1) {
+@start.1
+	%.2 =l alloc4 4
+	storew %.1, %.2
+@body.2
+	%.3 =w loadw %.2
+	%.4 =w call extern $__ie64_clz32(w %.3)
+	%.5 =l extsw %.4
+	ret %.5
+}
+export
+function l $clzlong(l %.1) {
+@start.3
+	%.2 =l alloc8 8
+	storel %.1, %.2
+@body.4
+	%.3 =l loadl %.2
+	%.4 =w call extern $__ie64_clz64(l %.3)
+	%.5 =l extsw %.4
+	ret %.5
+}
+export
+function l $clz64(l %.1) {
+@start.5
+	%.2 =l alloc8 8
+	storel %.1, %.2
+@body.6
+	%.3 =l loadl %.2
+	%.4 =w call extern $__ie64_clz64(l %.3)
+	%.5 =l extsw %.4
+	ret %.5
+}

@@ -1,0 +1,11 @@
+export data $answer = align 4 { w 42, }
+data $.Llocal.2 = align 8 { l 9, }
+export
+function w $f() {
+@start.1
+@body.2
+	%.1 =w loadw extern $answer
+	%.2 =l loadl $.Llocal.2
+	%.3 =w add %.1, %.2
+	ret %.3
+}

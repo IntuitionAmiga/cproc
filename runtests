@@ -12,7 +12,8 @@ numfail=0
 fail=
 got=$(mktemp)
 tmp=$(mktemp)
-trap 'rm "$got"' EXIT
+absolute_tmp=$(mktemp -d)
+trap 'rm -f "$got" "$tmp"; rm -rf "$absolute_tmp"' EXIT
 
 checkfail() {
 	got=$1
@@ -36,10 +37,18 @@ for test ; do
 		fi
 	elif [ -f "$name.pp" ] ; then
 		want=$name.pp
-		set -- $CCQBE -t $arch -E -o "$got" "$test"
+		if [ -f "$name.args" ] ; then
+			set -- $CCQBE -t $arch $(cat "$name.args") -E -o "$got" "$test"
+		else
+			set -- $CCQBE -t $arch -E -o "$got" "$test"
+		fi
 	elif [ -f "$name.err" ] ; then
 		want=$name.err
-		set -- checkfail "$got" $CCQBE -t $arch -o /dev/null "$test"
+		if [ -f "$name.args" ] ; then
+			set -- checkfail "$got" $CCQBE -t $arch $(cat "$name.args") -o /dev/null "$test"
+		else
+			set -- checkfail "$got" $CCQBE -t $arch -o /dev/null "$test"
+		fi
 	else
 		echo "invalid test '$test'" >&2
 		continue
@@ -55,6 +64,49 @@ for test ; do
 	fi
 	echo "[$result] $test" >&2
 done
+
+case $CCQBE in
+/*) ccqbe_path=$CCQBE ;;
+*) ccqbe_path=$PWD/${CCQBE#./} ;;
+esac
+numtest=$((numtest + 1))
+if (cd test/quote-local && "$ccqbe_path" -t x86_64-sysv -E -o "$got" input.c) \
+&& diff -Nu test/quote-local/input.pp "$got" ; then
+	echo "[PASS] test/quote-local/input.c" >&2
+	numpass=$((numpass + 1))
+else
+	echo "[FAIL] test/quote-local/input.c" >&2
+	numfail=$((numfail + 1))
+	fail="$fail test/quote-local/input.c"
+fi
+
+numtest=$((numtest + 1))
+if "$ccqbe_path" -t x86_64-sysv -Z -d "$got" \
+    -T 'target with space#hash$cash\slash' test/dependency-target.c.fixture \
+&& diff -Nu test/dependency-target.dep "$got" ; then
+	echo "[PASS] test/dependency-target.c" >&2
+	numpass=$((numpass + 1))
+else
+	echo "[FAIL] test/dependency-target.c" >&2
+	numfail=$((numfail + 1))
+	fail="$fail test/dependency-target.c"
+fi
+
+printf 'int absolute_include;\n' >"$absolute_tmp/header.h"
+printf '\101\102' >"$absolute_tmp/data.bin"
+printf '#include "%s/header.h"\n#embed "%s/data.bin"\n' \
+	"$absolute_tmp" "$absolute_tmp" >"$absolute_tmp/input.c"
+numtest=$((numtest + 1))
+if "$ccqbe_path" -t x86_64-sysv -E -o "$got" "$absolute_tmp/input.c" \
+&& grep -q 'int absolute_include;' "$got" \
+&& grep -Eq '65,[[:space:]]*66|65[[:space:]]*,[[:space:]]*66' "$got" ; then
+	echo "[PASS] absolute quoted include and embed paths" >&2
+	numpass=$((numpass + 1))
+else
+	echo "[FAIL] absolute quoted include and embed paths" >&2
+	numfail=$((numfail + 1))
+	fail="$fail absolute quoted include and embed paths"
+fi
 
 printf "\n%d/%d tests passed\n" "$numpass" "$numtest"
 if [ "$numfail" -gt 0 ] ; then

@@ -16,13 +16,17 @@ struct scanner {
 	int chr;
 	bool usebuf;
 	bool sawspace;
+	bool eofafternewline;
 	FILE *file;
 	struct location loc;
 	struct buffer buf;
+	bool include;
+	size_t conditionaldepth;
 	struct scanner *next;
 };
 
 static struct scanner *scanner;
+static struct array includeends;
 
 static void
 bufadd(struct buffer *b, int c)
@@ -51,11 +55,14 @@ static void
 nextchar(struct scanner *s)
 {
 	int c;
+	int previous = s->chr;
 
 	if (s->usebuf)
 		bufadd(&s->buf, s->chr);
 	for (;;) {
 		s->chr = getc(s->file);
+		if (s->chr == EOF)
+			s->eofafternewline = previous == '\n';
 		if (s->chr == '\n') {
 			++s->loc.line, s->loc.col = 0;
 			break;
@@ -414,13 +421,39 @@ again:
 	}
 }
 
-void
-scanfrom(const char *name, FILE *file)
+bool
+scanvalidpp(const char *spelling, size_t len)
+{
+	struct scanner s = {0};
+	struct location loc;
+	FILE *f;
+	int first, second;
+
+	f = tmpfile();
+	if (!f)
+		fatal("create temporary token-paste stream:");
+	if (fwrite(spelling, 1, len, f) != len || fseek(f, 0, SEEK_SET) != 0)
+		fatal("write temporary token-paste stream:");
+	s.file = f;
+	s.chr = '\n';
+	s.loc.file = "<token paste>";
+	s.loc.line = 1;
+	nextchar(&s);
+	first = scankind(&s, &loc);
+	second = scankind(&s, &loc);
+	fclose(f);
+	free(s.buf.str);
+	return first != TEOF && first != TNEWLINE && second == TEOF;
+}
+
+static void
+scanpush(const char *name, FILE *file, bool include, size_t conditionaldepth)
 {
 	struct scanner *s;
 
 	s = xmalloc(sizeof(*s));
 	s->file = file;
+	s->chr = '\n';
 	s->buf.str = NULL;
 	s->buf.len = 0;
 	s->buf.cap = 0;
@@ -429,9 +462,23 @@ scanfrom(const char *name, FILE *file)
 	s->loc.line = 1;
 	s->loc.col = 0;
 	s->next = scanner;
+	s->include = include;
+	s->conditionaldepth = conditionaldepth;
 	if (file)
 		nextchar(s);
 	scanner = s;
+}
+
+void
+scanfrom(const char *name, FILE *file)
+{
+	scanpush(name, file, false, 0);
+}
+
+void
+scanfrominclude(const char *name, FILE *file, size_t conditionaldepth)
+{
+	scanpush(name, file, true, conditionaldepth);
 }
 
 void
@@ -443,6 +490,17 @@ scanopen(void)
 			fatal("open %s:", scanner->loc.file);
 		nextchar(scanner);
 	}
+}
+
+bool
+scanincludeend(size_t *conditionaldepth)
+{
+	size_t *depth = arraylast(&includeends, sizeof *depth);
+	if (!depth)
+		return false;
+	*conditionaldepth = *depth;
+	includeends.len -= sizeof *depth;
+	return true;
 }
 
 void
@@ -464,11 +522,26 @@ scan(struct token *t)
 {
 	scanner->sawspace = false;
 	for (;;) {
+		struct scanner *next;
 		t->kind = scankind(scanner, &t->loc);
+		/* Translation phase 1 supplies a terminating newline.  Preserve
+		 * that boundary before returning to the including scanner so a
+		 * final directive in a header without a physical newline cannot
+		 * consume the next directive in its includer. */
+		if (t->kind == TEOF && scanner->next && !scanner->eofafternewline) {
+			t->kind = TNEWLINE;
+			scanner->eofafternewline = true;
+			break;
+		}
 		if (t->kind != TEOF || !scanner->next)
 			break;
+		next = scanner->next;
+		if (scanner->include) {
+			size_t *depth = arrayadd(&includeends, sizeof *depth);
+			*depth = scanner->conditionaldepth;
+		}
 		scanclose();
-		scanner = scanner->next;
+		scanner = next;
 		scanopen();
 	}
 	if (scanner->usebuf) {

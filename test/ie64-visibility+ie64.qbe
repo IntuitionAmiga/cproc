@@ -1,0 +1,16 @@
+export
+function $visible_function() {
+@start.1
+@body.2
+	ret
+}
+export
+hidden
+function $hidden_function() {
+@start.3
+@body.4
+	ret
+}
+export section ".fini_array_onexit" data $retained = align 8 { l $hidden_function, }
+export data $visible_object = align 4 { z 4 }
+export hidden data $hidden_object = align 4 { z 4 }

@@ -29,7 +29,7 @@ static bool
 parseattr(struct attr *a, enum attrkind allowed, enum attrprefix prefix)
 {
 	const char *name, *prefixname = "";
-	char namebuf[32], *section;
+	char namebuf[32], *section, *visibility;
 	enum attrkind kind;
 	int paren;
 
@@ -82,10 +82,30 @@ parseattr(struct attr *a, enum attrkind allowed, enum attrprefix prefix)
 			if (a)
 				a->section = section;
 			expect(TRPAREN, "after section name");
+		} else if (strcmp(name, "weak") == 0) {
+			kind = ATTRWEAK;
+		} else if (strcmp(name, "visibility") == 0) {
+			kind = ATTRVISIBILITY;
+			expect(TLPAREN, "after 'visibility'");
+			visibility = expect(TSTRINGLIT, "for visibility name");
+			if (strcmp(visibility, "hidden") != 0 && strcmp(visibility, "\"hidden\"") != 0
+			&& strcmp(visibility, "default") != 0 && strcmp(visibility, "\"default\"") != 0)
+				error(&tok.loc, "unsupported visibility '%s'", visibility);
+			if (a && (strcmp(visibility, "hidden") == 0 || strcmp(visibility, "\"hidden\"") == 0))
+				a->hidden = true;
+			expect(TRPAREN, "after visibility name");
 		}
 		break;
 	}
 	if (kind) {
+		if ((kind == ATTRCONSTRUCTOR || kind == ATTRDESTRUCTOR) && consume(TLPAREN)) {
+			unsigned long long priority = intconstexpr(&filescope, false);
+			if (priority > 65535)
+				error(&tok.loc, "invalid constructor priority %llu", priority);
+			if (a)
+				a->priority = priority;
+			expect(TRPAREN, "after constructor priority");
+		}
 		if (!(kind & allowed))
 			error(&tok.loc, "%sattribute '%s' is not supported here", prefixname, name);
 		if (a)

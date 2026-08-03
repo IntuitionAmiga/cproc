@@ -47,7 +47,6 @@ static const struct target alltargs[] = {
 		},
 		.typewchar = &typeuint,
 		.signedchar = 1,
-		.nolongdouble = 1,
 	},
 };
 
@@ -68,6 +67,11 @@ targinit(const char *name)
 	if (!targ)
 		fatal("unknown target '%s'", name);
 	typechar.u.arith.issigned = targ->signedchar;
+	if (strcmp(targ->name, "ie64") == 0) {
+		/* The frozen IE64 ABI represents long double as IEEE binary64. */
+		typeldouble.size = 8;
+		typeldouble.align = 8;
+	}
 	qual = QUALNONE;
 	typeadjvalist = typeadjust(targ->typevalist, &qual);
 }

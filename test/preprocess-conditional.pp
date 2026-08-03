@@ -1,0 +1,8 @@
+good_one
+good_two
+good_function_macro
+signed char prior_expansion;
+good_later_macro_definition
+good_character_constants
+good_uint64_constant
+good_conditional_expression

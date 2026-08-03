@@ -1,0 +1,7 @@
+export
+function w $result() {
+@start.1
+@body.2
+	ret 2
+}
+data $helper = align 4 { z 4 }

@@ -1,0 +1,3 @@
+ABC
+
+pragma_ok

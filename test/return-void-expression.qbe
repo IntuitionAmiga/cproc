@@ -1,0 +1,13 @@
+export
+function $sink() {
+@start.1
+@body.2
+	ret
+}
+export
+function $wrapper() {
+@start.3
+@body.4
+	call extern $sink()
+	ret
+}

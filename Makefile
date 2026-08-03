@@ -9,10 +9,7 @@ objdir=.
 -include config.mk
 
 .PHONY: all
-all: $(objdir)/cproc $(objdir)/cproc-qbe ie64-cproc
-
-ie64-cproc: $(objdir)/cproc $(objdir)/cproc-qbe
-	chmod +x $@
+all: $(objdir)/cproc $(objdir)/cproc-qbe
 
 DRIVER_SRC=\
 	driver.c\
@@ -81,28 +78,29 @@ $(objdir)/util.o    : util.c    util.h          $(stagedeps) ; $(CC) $(CFLAGS) -
 stage2: all
 	@mkdir -p $@
 	PATH=../qbe:$$PATH $(MAKE) objdir=$@ stagedeps='cproc cproc-qbe' CC=$(objdir)/cproc LDFLAGS='$(LDFLAGS) -s'
-	cp ie64-cproc $@/ie64-cproc
 
 .PHONY: stage3
 stage3: stage2
 	@mkdir -p $@
 	PATH=../qbe:$$PATH $(MAKE) objdir=$@ stagedeps='stage2/cproc stage2/cproc-qbe' CC=$(objdir)/stage2/cproc LDFLAGS='$(LDFLAGS) -s'
-	cp ie64-cproc $@/ie64-cproc
 
 .PHONY: bootstrap
 bootstrap: stage2 stage3
 	cmp stage2/cproc stage3/cproc
 	cmp stage2/cproc-qbe stage3/cproc-qbe
 
-.PHONY: check
-check: all
+.PHONY: check check-c23-matrix
+check: all check-c23-matrix
 	@CCQBE=./cproc-qbe ./runtests
+
+check-c23-matrix:
+	@./tools/check-c23-matrix.sh
 
 .PHONY: check-ie64 check-ie64-driver check-ie64-runtime generate-ie64-runtime
 check-ie64: check-ie64-driver check-ie64-runtime
 
 check-ie64-driver: all stage2
-	@./tools/test-ie64-driver.sh
+	@cd ../IntuitionEngine && go test ./cmd/ie64-cproc
 
 check-ie64-runtime: all
 	@./tools/check-ie64-runtime.sh

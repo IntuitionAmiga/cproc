@@ -1,4 +1,4 @@
-function l $unit.local() {
+function l $local() {
 @start.1
 @body.2
 	%.1 =l extsw 7
@@ -8,10 +8,10 @@ export
 function l $f() {
 @start.3
 @body.4
-	%.1 =l call $unit.local()
-	storew %.1, $unit.value
-	%.2 =w loadw $unit.value
+	%.1 =l call $local()
+	storew %.1, $value
+	%.2 =w loadw $value
 	%.3 =l extsw %.2
 	ret %.3
 }
-data $unit.value = align 4 { z 4 }
+data $value = align 4 { z 4 }

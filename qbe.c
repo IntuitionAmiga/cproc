@@ -149,12 +149,7 @@ mkglobal(struct decl *d)
 		v->u.name = d->asmname;
 		v->id = 0;
 	} else {
-		if (d->linkage != LINKEXTERN && ie64unitprefix) {
-			size_t n = strlen(ie64unitprefix) + 1 + strlen(d->name) + 1;
-			v->u.name = xmalloc(n);
-			snprintf(v->u.name, n, "%s.%s", ie64unitprefix, d->name);
-		} else
-			v->u.name = d->name;
+		v->u.name = d->name;
 		v->id = d->linkage == LINKNONE ? ++id : 0;
 	}
 
@@ -214,9 +209,15 @@ qbetype(struct type *t)
 }
 
 static bool
+isie64(void)
+{
+	return strcmp(targ->name, "ie64") == 0;
+}
+
+static bool
 ie64wideint(struct type *t)
 {
-	return strcmp(targ->name, "ie64") == 0
+	return isie64()
 		&& t->prop & PROPINT && t->size < 8;
 }
 
@@ -529,6 +530,57 @@ funccopy(struct func *f, struct value *dst, struct value *src, unsigned long lon
 }
 
 static struct value *
+atomictemp(struct func *f, struct type *t)
+{
+	struct decl *d;
+
+	d = mkdecl(NULL, DECLOBJECT, t, QUALNONE, LINKNONE);
+	d->u.obj.storage = SDAUTO;
+	funcalloc(f, d);
+	return d->value;
+}
+
+static void
+atomiccall(struct func *f, const char *name, struct value *object,
+	struct value *buffer, struct type *t, enum typequal tq)
+{
+	struct decl *d;
+	struct value *callee;
+
+	d = mkdecl((char *)name, DECLFUNC, NULL, QUALNONE, LINKEXTERN);
+	callee = mkglobal(d);
+	funcinst(f, ICALL, 0, callee, NULL);
+	funcinst(f, IARG, ptrclass, object, NULL);
+	funcinst(f, IARG, ptrclass, buffer, NULL);
+	funcinst(f, IARG, 'l', mkintconst(t->size), NULL);
+	funcinst(f, IARG, 'l', mkintconst(!!(tq & QUALVOLATILE)), NULL);
+}
+
+static struct value *
+atomicruntimecall(struct func *f, const char *name, int resultclass,
+	struct value **args, int *classes, size_t nargs)
+{
+	struct decl *d;
+	struct value *callee, *result;
+	size_t i;
+
+	d = mkdecl((char *)name, DECLFUNC, NULL, QUALNONE, LINKEXTERN);
+	callee = mkglobal(d);
+	result = funcinst(f, ICALL, resultclass, callee, NULL);
+	for (i = 0; i < nargs; ++i)
+		funcinst(f, IARG, classes[i], args[i], NULL);
+	return result;
+}
+
+static void
+atomicvalidate(struct func *f, struct value *success, struct value *failure)
+{
+	struct value *args[] = {success, failure};
+	int classes[] = {'l', 'l'};
+	atomicruntimecall(f, "__ie64_atomic_validate_orders", 0, args, classes, 2);
+}
+
+static struct value *
 funcstore(struct func *f, struct type *t, enum typequal tq, struct lvalue lval, struct value *v)
 {
 	struct value *r;
@@ -539,6 +591,17 @@ funcstore(struct func *f, struct type *t, enum typequal tq, struct lvalue lval, 
 
 	if (tq & QUALCONST)
 		error(&tok.loc, "cannot store to 'const' object");
+	if (tq & QUALATOMIC) {
+		struct value *tmp;
+		if (!isie64())
+			error(&tok.loc, "atomic access is not yet supported on this target");
+		if (lval.bits.before || lval.bits.after)
+			error(&tok.loc, "atomic bit-fields are not supported");
+		tmp = atomictemp(f, t);
+		funcstore(f, t, QUALNONE, (struct lvalue){tmp}, v);
+		atomiccall(f, "__ie64_atomic_store", lval.addr, tmp, t, tq);
+		return v;
+	}
 	tp = t->prop;
 	assert(!lval.bits.before && !lval.bits.after || tp & PROPINT);
 	r = v;
@@ -582,6 +645,17 @@ funcload(struct func *f, struct type *t, enum typequal tq, struct lvalue lval)
 {
 	struct value *v;
 	struct qbetype qt;
+
+	if (tq & QUALATOMIC) {
+		struct value *tmp;
+		if (!isie64())
+			error(&tok.loc, "atomic access is not yet supported on this target");
+		if (lval.bits.before || lval.bits.after)
+			error(&tok.loc, "atomic bit-fields are not supported");
+		tmp = atomictemp(f, t);
+		atomiccall(f, "__ie64_atomic_load", lval.addr, tmp, t, tq);
+		return funcload(f, t, QUALNONE, (struct lvalue){tmp});
+	}
 
 	switch (t->kind) {
 	case TYPESTRUCT:
@@ -774,7 +848,8 @@ funclval(struct func *f, struct expr *e)
 		if (e->toeval)
 			funcexpr(f, e->toeval);
 		d = e->u.compound.decl;
-		funcinit(f, d, e->u.compound.init, true);
+		if (d->u.obj.storage == SDAUTO)
+			funcinit(f, d, e->u.compound.init, true);
 		lval.addr = d->value;
 		break;
 	case EXPRUNARY:
@@ -874,7 +949,6 @@ funcexpr(struct func *f, struct expr *e)
 		return funcload(f, e->type, e->qual, lval);
 	case EXPRINCDEC:
 		lval = funclval(f, e->base);
-		l = funcload(f, e->base->type, e->base->qual, lval);
 		t = e->type;
 		if (t->kind == TYPEPOINTER) {
 			if (t->base->kind == TYPEARRAY && t->base->size == 0) {
@@ -889,6 +963,27 @@ funcexpr(struct func *f, struct expr *e)
 		} else {
 			fatal("not a scalar");
 		}
+		if (e->base->qual & QUALATOMIC) {
+			struct value *operand = atomictemp(f, t);
+			struct value *old = atomictemp(f, t);
+			struct value *args[6] = {
+				lval.addr, operand, old, mkintconst(t->size),
+				mkintconst(!!(e->base->qual & QUALVOLATILE)), NULL,
+			};
+			int classes[6] = {ptrclass, ptrclass, ptrclass, 'l', 'l', 'l'};
+			int operation = e->op == TINC ? 0 : 1;
+			if (!isie64())
+				error(&tok.loc, "atomic access is not yet supported on this target");
+			if (t->prop & PROPFLOAT)
+				operation += 5;
+			args[5] = mkintconst(operation);
+			funcstore(f, t, QUALNONE, (struct lvalue){operand}, r);
+			atomicruntimecall(f, "__ie64_atomic_fetch", 0, args, classes, 6);
+			l = funcload(f, t, QUALNONE, (struct lvalue){old});
+			v = funcinst(f, e->op == TINC ? IADD : ISUB, qbetype(t).base, l, r);
+			return e->u.incdec.post ? l : v;
+		}
+		l = funcload(f, e->base->type, e->base->qual, lval);
 		v = funcinst(f, e->op == TINC ? IADD : ISUB, qbetype(t).base, l, r);
 		v = funcstore(f, e->type, e->qual, lval, v);
 		return e->u.incdec.post ? l : v;
@@ -1102,6 +1197,112 @@ funcexpr(struct func *f, struct expr *e)
 		return funcexpr(f, e);
 	case EXPRBUILTIN:
 		switch (e->u.builtin.kind) {
+		case BUILTINATOMICLOAD:
+		case BUILTINATOMICSTORE:
+		case BUILTINATOMICEXCHANGE:
+		case BUILTINATOMICCOMPAREEXCHANGE:
+		case BUILTINATOMICFETCHADD:
+		case BUILTINATOMICFETCHSUB:
+		case BUILTINATOMICFETCHOR:
+		case BUILTINATOMICFETCHXOR:
+		case BUILTINATOMICFETCHAND:
+		case BUILTINATOMICCOMPOUND: {
+			struct expr *object = e->base;
+			struct expr *value = NULL, *expected = NULL, *success, *failure = NULL;
+			struct value *objectaddr, *valuebuf = NULL, *resultbuf = NULL;
+			struct value *args[6];
+			int classes[6];
+			int operation;
+			struct type *objecttype = object->type->base;
+			enum typequal objectqual = object->type->qual;
+			if (!isie64())
+				error(&tok.loc, "atomic operations are not yet supported on this target");
+
+			objectaddr = funcexpr(f, object);
+			arg = object->next;
+			if (e->u.builtin.kind == BUILTINATOMICCOMPAREEXCHANGE) {
+				expected = arg;
+				arg = arg->next;
+			}
+			if (e->u.builtin.kind != BUILTINATOMICLOAD) {
+				value = arg;
+				arg = arg->next;
+				valuebuf = atomictemp(f, objecttype);
+				funcstore(f, objecttype, QUALNONE, (struct lvalue){valuebuf}, funcexpr(f, value));
+			}
+			success = arg;
+			if (success->next)
+				failure = success->next;
+			l = funcexpr(f, success);
+			r = failure ? funcexpr(f, failure) : mkintconst(0);
+			atomicvalidate(f, l, r);
+			if (e->u.builtin.kind == BUILTINATOMICLOAD) {
+				resultbuf = atomictemp(f, objecttype);
+				atomiccall(f, "__ie64_atomic_load", objectaddr, resultbuf, objecttype, objectqual);
+				return funcload(f, objecttype, QUALNONE, (struct lvalue){resultbuf});
+			}
+			if (e->u.builtin.kind == BUILTINATOMICSTORE) {
+				atomiccall(f, "__ie64_atomic_store", objectaddr, valuebuf, objecttype, objectqual);
+				return NULL;
+			}
+			resultbuf = atomictemp(f, objecttype);
+			args[0] = objectaddr; classes[0] = ptrclass;
+			if (e->u.builtin.kind == BUILTINATOMICCOMPAREEXCHANGE) {
+				args[1] = funcexpr(f, expected); classes[1] = ptrclass;
+				args[2] = valuebuf; classes[2] = ptrclass;
+				args[3] = mkintconst(objecttype->size); classes[3] = 'l';
+				args[4] = mkintconst(!!(objectqual & QUALVOLATILE)); classes[4] = 'l';
+				return atomicruntimecall(f, "__ie64_atomic_compare_exchange",
+					qbetype(&typebool).base, args, classes, 5);
+			}
+			args[1] = valuebuf; classes[1] = ptrclass;
+			args[2] = resultbuf; classes[2] = ptrclass;
+			args[3] = mkintconst(objecttype->size); classes[3] = 'l';
+			args[4] = mkintconst(!!(objectqual & QUALVOLATILE)); classes[4] = 'l';
+			if (e->u.builtin.kind == BUILTINATOMICEXCHANGE) {
+				atomicruntimecall(f, "__ie64_atomic_exchange", 0, args, classes, 5);
+			} else {
+				if (e->u.builtin.kind == BUILTINATOMICCOMPOUND) {
+					switch (e->op) {
+					case TADD: operation = objecttype->prop & PROPFLOAT ? 5 : 0; break;
+					case TSUB: operation = objecttype->prop & PROPFLOAT ? 6 : 1; break;
+					case TBOR: operation = 2; break;
+					case TXOR: operation = 3; break;
+					case TBAND: operation = 4; break;
+					case TMUL: operation = objecttype->prop & PROPFLOAT ? 15 : 7; break;
+					case TDIV: operation = objecttype->prop & PROPFLOAT ? 16
+						: objecttype->u.arith.issigned ? 9 : 8; break;
+					case TMOD: operation = objecttype->u.arith.issigned ? 11 : 10; break;
+					case TSHL: operation = 12; break;
+					case TSHR: operation = objecttype->u.arith.issigned ? 14 : 13; break;
+					default: fatal("internal error: unsupported atomic compound operation");
+					}
+				} else {
+					operation = e->u.builtin.kind - BUILTINATOMICFETCHADD;
+				}
+				args[5] = mkintconst(operation); classes[5] = 'l';
+				atomicruntimecall(f, "__ie64_atomic_fetch", 0, args, classes, 6);
+			}
+			l = funcload(f, objecttype, QUALNONE, (struct lvalue){resultbuf});
+			if (e->u.builtin.kind == BUILTINATOMICCOMPOUND) {
+				r = funcload(f, objecttype, QUALNONE, (struct lvalue){valuebuf});
+				switch (e->op) {
+				case TMUL: op = IMUL; break;
+				case TDIV: op = !(objecttype->prop & PROPINT) || objecttype->u.arith.issigned ? IDIV : IUDIV; break;
+				case TMOD: op = objecttype->u.arith.issigned ? IREM : IUREM; break;
+				case TADD: op = IADD; break;
+				case TSUB: op = ISUB; break;
+				case TSHL: op = ISHL; break;
+				case TSHR: op = objecttype->u.arith.issigned ? ISAR : ISHR; break;
+				case TBOR: op = IOR; break;
+				case TBAND: op = IAND; break;
+				case TXOR: op = IXOR; break;
+				default: fatal("internal error: unsupported atomic compound operation");
+				}
+				return funcinst(f, op, qbetype(objecttype).base, l, r);
+			}
+			return l;
+		}
 		case BUILTINVASTART:
 			l = funcexpr(f, e->base);
 			funcinst(f, IVASTART, 0, l, NULL);
@@ -1126,6 +1327,19 @@ funcexpr(struct func *f, struct expr *e)
 		case BUILTINALLOCA:
 			l = funcexpr(f, e->base);
 			return funcinst(f, IALLOC16, ptrclass, l, NULL);
+		case BUILTINCLZ:
+		case BUILTINCLZL:
+		case BUILTINCLZLL: {
+			struct value *args[1];
+			int classes[1];
+			if (!isie64())
+				error(&tok.loc, "count-leading-zeros builtin is not yet supported on this target");
+			args[0] = funcexpr(f, e->base);
+			classes[0] = e->u.builtin.kind == BUILTINCLZ ? 'w' : 'l';
+			return atomicruntimecall(f,
+				e->u.builtin.kind == BUILTINCLZ ? "__ie64_clz32" : "__ie64_clz64",
+				'w', args, classes, 1);
+		}
 		case BUILTINUNREACHABLE:
 			funchlt(f);
 			return NULL;
@@ -1482,8 +1696,14 @@ emitfunc(struct func *f, bool global)
 			v = mkintconst(0);
 		funcret(f, v);
 	}
-	if (global)
+	if (f->decl->weak)
+		puts("weak");
+	else if (global)
 		puts("export");
+	if (f->decl->hidden)
+		puts("hidden");
+	if (f->decl->section)
+		printf("section %s\n", f->decl->section);
 	fputs("function ", stdout);
 	if (f->type->base != &typevoid) {
 		emitclass(abiclass(f->type->base), f->type->base->value);
@@ -1603,8 +1823,14 @@ emitdata(struct decl *d, struct init *init)
 		cur->expr = eval(cur->expr);
 	if (d->u.obj.storage == SDTHREAD)
 		fputs("thread ", stdout);
-	if (d->linkage == LINKEXTERN)
+	if (d->weak)
+		fputs("weak ", stdout);
+	else if (d->linkage == LINKEXTERN)
 		fputs("export ", stdout);
+	if (d->hidden)
+		fputs("hidden ", stdout);
+	if (d->section)
+		printf("section %s ", d->section);
 	fputs("data ", stdout);
 	emitname(d->value);
 	printf(" = align %d { ", align);
@@ -1666,4 +1892,19 @@ emitdata(struct decl *d, struct init *init)
 	if (offset < d->type->size)
 		printf("z %llu ", d->type->size - offset);
 	puts("}");
+}
+
+void
+emitarrayref(struct decl *d, bool fini, int priority)
+{
+	static unsigned long serial;
+	const char *section = fini ? ".fini_array" : ".init_array";
+
+	if (priority != 65535)
+		printf("section \"%s.%05d\"\n", section, priority);
+	else
+		printf("section \"%s\"\n", section);
+	printf("data $__cproc_%s_%lu = align 8 { l ", fini ? "dtor" : "ctor", serial++);
+	emitname(d->value);
+	puts(" }");
 }
