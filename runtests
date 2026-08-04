@@ -108,6 +108,19 @@ else
 	fail="$fail absolute quoted include and embed paths"
 fi
 
+printf '__DATE__\n__TIME__\n' >"$absolute_tmp/datetime.c"
+numtest=$((numtest + 1))
+if TZ=UTC SOURCE_DATE_EPOCH=0 "$ccqbe_path" -t x86_64-sysv -E \
+	-o "$got" "$absolute_tmp/datetime.c" \
+&& printf ' "Jan  1 1970"\n"00:00:00"\n' | diff -Nu - "$got" ; then
+	echo "[PASS] reproducible predefined date and time" >&2
+	numpass=$((numpass + 1))
+else
+	echo "[FAIL] reproducible predefined date and time" >&2
+	numfail=$((numfail + 1))
+	fail="$fail reproducible predefined date and time"
+fi
+
 printf "\n%d/%d tests passed\n" "$numpass" "$numtest"
 if [ "$numfail" -gt 0 ] ; then
 	printf "%d test(s) failed (%s)\n" "$numfail" "${fail# }"

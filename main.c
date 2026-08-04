@@ -139,7 +139,7 @@ main(int argc, char *argv[])
 		ppoption(&predefines, "#define", "__ie64__=1");
 		ppoption(&predefines, "#define", "__IE64__=1");
 		ppoption(&predefines, "#define", "__ie64_baremetal__=1");
-		ppoption(&predefines, "#define", "__IE64_ABI_VERSION__=2");
+		ppoption(&predefines, "#define", "__IE64_ABI_VERSION__=3");
 		ppoption(&predefines, "#define", "__ORDER_LITTLE_ENDIAN__=1234");
 		ppoption(&predefines, "#define", "__ORDER_BIG_ENDIAN__=4321");
 		ppoption(&predefines, "#define", "__ORDER_PDP_ENDIAN__=3412");

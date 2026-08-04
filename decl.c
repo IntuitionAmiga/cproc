@@ -1078,6 +1078,10 @@ decl(struct scope *s, struct func *f)
 		;
 	base = declspecs(s, &sc, &fs, &align, &a);
 	declarationattr = a;
+	/* IE64 is a single-address-space freestanding target.  Accepting TLS here
+	 * would emit QBE thread data without a loader or runtime contract. */
+	if (strcmp(targ->name, "ie64") == 0 && (sc & SCTHREADLOCAL))
+		error(&tok.loc, "thread_local is unsupported for the freestanding IE64 target");
 	autoinfer = !base.type && sc == SCAUTO;
 	if (!base.type && !autoinfer)
 		return false;

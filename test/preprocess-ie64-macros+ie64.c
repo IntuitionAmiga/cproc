@@ -10,6 +10,9 @@
 #if __SIZEOF_LONG_DOUBLE__ != 8 || __LDBL_MANT_DIG__ != 53
 #error incorrect long double format
 #endif
+#if __IE64_ABI_VERSION__ != 3
+#error incorrect IE64 ABI version
+#endif
 ie64_macros_ok
 #if __SIZE_MAX__ != 18446744073709551615UL
 #error incorrect __SIZE_MAX__

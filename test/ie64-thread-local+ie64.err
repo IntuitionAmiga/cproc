@@ -1,0 +1,1 @@
+error: thread_local is unsupported for the freestanding IE64 target
