@@ -17,5 +17,5 @@ fail()
 [[ -x $root/cproc-qbe ]] || fail "build cproc first"
 [[ -x $qbe ]] || fail "missing QBE executable $qbe"
 
-"$root/cproc-qbe" -t ie64 -I "$sdk/include" "$source" |
+"$root/cproc-qbe" -t ie64 -DIE_TARGET_IE64=1 -I "$sdk/include" "$source" |
 	"$qbe" -t ie64 -o "$output"
