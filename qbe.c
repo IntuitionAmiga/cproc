@@ -1,3 +1,4 @@
+#define _POSIX_C_SOURCE 200809L  /* open_memstream */
 #include <assert.h>
 #include <ctype.h>
 #include <inttypes.h>
@@ -75,6 +76,13 @@ keepinternal(void)
 	return keep;
 }
 
+/* the real standard output, which the macros below hide */
+static FILE *
+realout(void)
+{
+	return stdout;
+}
+
 #undef stdout
 #undef printf
 #undef putchar
@@ -108,7 +116,8 @@ closeseg(void)
 {
 	if (!curseg)
 		return;
-	if (fclose(curseg->fp) != 0)
+	/* glibc can lose memory stream data without reporting it on every write */
+	if (ferror(curseg->fp) || fflush(curseg->fp) != 0 || fclose(curseg->fp) != 0 || !curseg->buf)
 		fatal("write failed");
 	curseg->fp = NULL;
 	curseg = NULL;
@@ -132,7 +141,13 @@ symof(struct value *v)
 	char *name;
 	int n;
 
-	if ((v->kind & 0xf) != VALUE_GLOBAL || v->kind & (VALUE_EXTERN | VALUE_QUOTE | VALUE_THREAD))
+	if ((v->kind & 0xf) != VALUE_GLOBAL || v->kind & VALUE_THREAD)
+		return NULL;
+	/*
+	A quoted name is the assembler symbol itself, so it can name a
+	static definition through an asm label on an extern declaration.
+	*/
+	if (v->kind & VALUE_EXTERN && !(v->kind & VALUE_QUOTE))
 		return NULL;
 	if (v->id) {
 		name = xmalloc(24);
@@ -2099,12 +2114,6 @@ emitarrayref(struct decl *d, bool fini, int priority)
 	puts(" }");
 }
 
-#undef stdout
-#undef stdout
-#undef printf
-#undef putchar
-#undef puts
-
 /*
 Write the buffered output, leaving out the deferred units that nothing
 reachable from the always-emitted output refers to.
@@ -2151,7 +2160,7 @@ emitfinish(void)
 	free(stack);
 	for (seg = segs; seg; seg = next) {
 		next = seg->next;
-		if ((!seg->sym || seg->sym->kept) && fwrite(seg->buf, 1, seg->len, stdout) != seg->len)
+		if ((!seg->sym || seg->sym->kept) && fwrite(seg->buf, 1, seg->len, realout()) != seg->len)
 			fatal("write failed");
 		free(seg->buf);
 		free(seg);

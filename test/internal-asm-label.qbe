@@ -1,0 +1,6 @@
+function w $local() {
+@start.1
+@body.2
+	ret 42
+}
+export data $entry = align 8 { l $"local", }
