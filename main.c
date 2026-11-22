@@ -272,6 +272,7 @@ main(int argc, char *argv[])
 			}
 		}
 		emittentativedefns();
+		emitfinish();
 	}
 	if (depfile) {
 		FILE *depout = strcmp(depfile, "-") == 0 ? stdout : fopen(depfile, "w");

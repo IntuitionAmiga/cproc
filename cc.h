@@ -533,3 +533,4 @@ void funcinit(struct func *, struct decl *, struct init *, bool);
 void emitfunc(struct func *, bool);
 void emitdata(struct decl *, struct init *);
 void emitarrayref(struct decl *, bool, int);
+void emitfinish(void);

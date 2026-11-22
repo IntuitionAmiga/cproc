@@ -31,6 +31,188 @@ struct value {
 	} u;
 };
 
+/*
+Output of internal-linkage functions and of anonymous or block-scope static
+data is buffered and written at the end of the translation unit, once it is
+known whether anything refers to it.  Every name that is written out is
+recorded (see emitname) against the unit being written: a "root" unit
+(everything that is always emitted) or a deferred unit.  An unreferenced
+deferred unit is dropped; a deferred unit that is referenced only by other
+dropped units is dropped too.
+*/
+struct sym {
+	struct sym **refs;
+	size_t nrefs, caprefs;
+	unsigned long stamp;
+	bool defined;   /* a unit for this symbol was written */
+	bool rooted;    /* referenced from an always-emitted unit */
+	bool kept;
+};
+
+struct seg {
+	FILE *fp;
+	char *buf;
+	size_t len;
+	struct sym *sym;  /* NULL for always-emitted output */
+	struct seg *next;
+};
+
+static struct seg *segs, **segsend = &segs, *curseg;
+static struct map symtab;
+static unsigned long segserial;
+
+/* CPROC_KEEP_INTERNAL=1 turns the dropping of unreferenced internal symbols off */
+static bool
+keepinternal(void)
+{
+	static int keep = -1;
+	const char *env;
+
+	if (keep < 0) {
+		env = getenv("CPROC_KEEP_INTERNAL");
+		keep = env && *env && strcmp(env, "0") != 0;
+	}
+	return keep;
+}
+
+#undef stdout
+#undef printf
+#undef putchar
+#undef puts
+#define stdout (curout())
+#define printf(...) fprintf(curout(), __VA_ARGS__)
+#define putchar(c) putc((c), curout())
+#define puts(s) (fputs((s), curout()), putc('\n', curout()))
+
+static void
+openseg(struct sym *sym)
+{
+	struct seg *s;
+
+	s = xmalloc(sizeof(*s));
+	s->sym = sym;
+	s->buf = NULL;
+	s->len = 0;
+	s->next = NULL;
+	s->fp = open_memstream(&s->buf, &s->len);
+	if (!s->fp)
+		fatal("open_memstream:");
+	*segsend = s;
+	segsend = &s->next;
+	curseg = s;
+	++segserial;
+}
+
+static void
+closeseg(void)
+{
+	if (!curseg)
+		return;
+	if (fclose(curseg->fp) != 0)
+		fatal("write failed");
+	curseg->fp = NULL;
+	curseg = NULL;
+}
+
+static FILE *
+curout(void)
+{
+	if (!curseg)
+		openseg(NULL);
+	return curseg->fp;
+}
+
+/* look up the record of a name that has no external linkage */
+static struct sym *
+symof(struct value *v)
+{
+	struct mapkey k;
+	struct sym *sym;
+	size_t i;
+	char *name;
+	int n;
+
+	if ((v->kind & 0xf) != VALUE_GLOBAL || v->kind & (VALUE_EXTERN | VALUE_QUOTE | VALUE_THREAD))
+		return NULL;
+	if (v->id) {
+		name = xmalloc(24);
+		n = snprintf(name, 24, "%u", v->id);
+	} else if (v->u.name) {
+		name = xmalloc(strlen(v->u.name) + 2);
+		n = sprintf(name, "$%s", v->u.name);
+	} else {
+		return NULL;
+	}
+	if (!symtab.cap)
+		mapinit(&symtab, 256);
+	mapkey(&k, name, n);
+	if (mapput(&symtab, &k, &i)) {
+		sym = xmalloc(sizeof(*sym));
+		memset(sym, 0, sizeof(*sym));
+		symtab.vals[i].p = sym;
+	} else {
+		free(name);
+		sym = symtab.vals[i].p;
+	}
+	return sym;
+}
+
+static void
+noteref(struct value *v)
+{
+	struct sym *sym, *from;
+
+	sym = symof(v);
+	if (!sym)
+		return;
+	if (!curseg)
+		openseg(NULL);
+	from = curseg->sym;
+	if (!from) {
+		sym->rooted = true;
+	} else if (sym != from && sym->stamp != segserial) {
+		sym->stamp = segserial;
+		if (from->nrefs == from->caprefs) {
+			from->caprefs = from->caprefs ? from->caprefs * 2 : 8;
+			from->refs = xreallocarray(from->refs, from->caprefs, sizeof(from->refs[0]));
+		}
+		from->refs[from->nrefs++] = sym;
+	}
+}
+
+static bool
+deferrablefunc(struct decl *d)
+{
+	return !keepinternal() && d->linkage == LINKINTERN && !d->weak && !d->asmname && !d->section;
+}
+
+static bool
+deferrabledata(struct decl *d)
+{
+	return !keepinternal() && d->kind == DECLOBJECT && d->linkage == LINKNONE
+		&& d->u.obj.storage == SDSTATIC && !d->weak && !d->asmname && !d->section;
+}
+
+/* start output that may be dropped, if nothing refers to symbol v */
+static void
+beginunit(struct value *v, bool deferrable)
+{
+	struct sym *sym;
+
+	if (!deferrable || !(sym = symof(v)))
+		return;
+	closeseg();
+	openseg(sym);
+	sym->defined = true;
+}
+
+static void
+endunit(void)
+{
+	if (curseg && curseg->sym)
+		closeseg();
+}
+
 struct lvalue {
 	struct value *addr;
 	struct bitfield bits;
@@ -833,9 +1015,11 @@ funclval(struct func *f, struct expr *e)
 		if (d->kind != DECLOBJECT && d->kind != DECLFUNC)
 			error(&tok.loc, "identifier '%s' is not an object or function", d->name);
 		if (d == f->namedecl) {
+			beginunit(d->value, deferrabledata(d));
 			fputs("data ", stdout);
 			emitname(d->value);
 			printf(" = { b \"%s\", b 0 }\n", f->name);
+			endunit();
 			f->namedecl = NULL;
 		}
 		lval.addr = d->value;
@@ -1486,6 +1670,8 @@ emitname(struct value *v)
 	kind = v->kind & 0xf;
 	if (kind >= countof(sigil) || !sigil[kind])
 		fatal("invalid value");
+	if (kind == VALUE_GLOBAL)
+		noteref(v);
 	putchar(sigil[kind]);
 	if (kind == VALUE_GLOBAL && v->id)
 		fputs(".L", stdout);
@@ -1696,6 +1882,7 @@ emitfunc(struct func *f, bool global)
 			v = mkintconst(0);
 		funcret(f, v);
 	}
+	beginunit(f->decl->value, deferrablefunc(f->decl));
 	if (f->decl->weak)
 		puts("weak");
 	else if (global)
@@ -1746,6 +1933,7 @@ emitfunc(struct func *f, bool global)
 		emitjump(&b->jump);
 	}
 	puts("}");
+	endunit();
 }
 
 static void
@@ -1821,6 +2009,7 @@ emitdata(struct decl *d, struct init *init)
 	align = d->u.obj.align;
 	for (cur = init; cur; cur = cur->next)
 		cur->expr = eval(cur->expr);
+	beginunit(d->value, deferrabledata(d));
 	if (d->u.obj.storage == SDTHREAD)
 		fputs("thread ", stdout);
 	if (d->weak)
@@ -1892,6 +2081,7 @@ emitdata(struct decl *d, struct init *init)
 	if (offset < d->type->size)
 		printf("z %llu ", d->type->size - offset);
 	puts("}");
+	endunit();
 }
 
 void
@@ -1907,4 +2097,65 @@ emitarrayref(struct decl *d, bool fini, int priority)
 	printf("data $__cproc_%s_%lu = align 8 { l ", fini ? "dtor" : "ctor", serial++);
 	emitname(d->value);
 	puts(" }");
+}
+
+#undef stdout
+#undef stdout
+#undef printf
+#undef putchar
+#undef puts
+
+/*
+Write the buffered output, leaving out the deferred units that nothing
+reachable from the always-emitted output refers to.
+*/
+void
+emitfinish(void)
+{
+	struct seg *seg, *next;
+	struct sym **stack, *sym;
+	size_t i, n, cap;
+
+	closeseg();
+	cap = 64;
+	n = 0;
+	stack = xreallocarray(NULL, cap, sizeof(stack[0]));
+	if (symtab.cap) {
+		for (i = 0; i < symtab.cap; ++i) {
+			if (!symtab.keys[i].str)
+				continue;
+			sym = symtab.vals[i].p;
+			if (!sym->rooted || sym->kept)
+				continue;
+			sym->kept = true;
+			if (n == cap) {
+				cap *= 2;
+				stack = xreallocarray(stack, cap, sizeof(stack[0]));
+			}
+			stack[n++] = sym;
+		}
+	}
+	while (n > 0) {
+		sym = stack[--n];
+		for (i = 0; i < sym->nrefs; ++i) {
+			if (sym->refs[i]->kept)
+				continue;
+			sym->refs[i]->kept = true;
+			if (n == cap) {
+				cap *= 2;
+				stack = xreallocarray(stack, cap, sizeof(stack[0]));
+			}
+			stack[n++] = sym->refs[i];
+		}
+	}
+	free(stack);
+	for (seg = segs; seg; seg = next) {
+		next = seg->next;
+		if ((!seg->sym || seg->sym->kept) && fwrite(seg->buf, 1, seg->len, stdout) != seg->len)
+			fatal("write failed");
+		free(seg->buf);
+		free(seg);
+	}
+	segs = NULL;
+	segsend = &segs;
 }

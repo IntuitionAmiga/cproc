@@ -1,0 +1,86 @@
+function w $used_direct(w %.1) {
+@start.22
+	%.2 =l alloc4 4
+	storew %.1, %.2
+@body.23
+	%.3 =w loadw %.2
+	%.4 =w add %.3, 3
+	ret %.4
+}
+function w $used_address() {
+@start.24
+@body.25
+	ret 4
+}
+function w $used_data() {
+@start.26
+@body.27
+	ret 5
+}
+function w $used_chain_leaf(w %.1) {
+@start.28
+	%.2 =l alloc4 4
+	storew %.1, %.2
+@body.29
+	%.3 =w loadw %.2
+	%.4 =w add %.3, 6
+	ret %.4
+}
+function w $used_chain_mid(w %.1) {
+@start.30
+	%.2 =l alloc4 4
+	storew %.1, %.2
+@body.31
+	%.3 =w loadw %.2
+	%.4 =w call $used_chain_leaf(w %.3)
+	ret %.4
+}
+function w $used_ctor() {
+@start.32
+@body.33
+	ret 8
+}
+data $table = align 8 { l $used_data, }
+export
+function w $entry(w %.1) {
+@start.34
+	%.2 =l alloc4 4
+	storew %.1, %.2
+@body.35
+	storel $used_address, extern $fnptr
+	%.3 =w loadw %.2
+	%.4 =w call $used_direct(w %.3)
+	%.5 =w loadw %.2
+	%.6 =w call $used_chain_mid(w %.5)
+	%.7 =w add %.4, %.6
+	%.8 =w loadw %.2
+	%.9 =w call $used_forward(w %.8)
+	%.10 =w add %.7, %.9
+	%.11 =l extsw 0
+	%.12 =l mul %.11, 8
+	%.13 =l add $table, %.12
+	%.14 =l loadl %.13
+	%.15 =w call %.14()
+	%.16 =w add %.10, %.15
+	%.17 =w call extern $sink(w %.16)
+	ret %.17
+}
+function w $used_forward(w %.1) {
+@start.36
+	%.2 =l alloc4 4
+	storew %.1, %.2
+@body.37
+	%.3 =w loadw %.2
+	%.4 =w sub %.3, 1
+	ret %.4
+}
+function $ctor() {
+@start.38
+@body.39
+	%.1 =w call $used_ctor()
+	%.2 =w call extern $sink(w %.1)
+	ret
+}
+section ".init_array"
+data $__cproc_ctor_0 = align 8 { l $ctor }
+export data $fnptr = align 8 { z 8 }

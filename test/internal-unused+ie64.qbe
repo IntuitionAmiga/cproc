@@ -1,0 +1,100 @@
+function l $used_direct(l %.1) {
+@start.22
+	%.2 =l alloc4 4
+	storew %.1, %.2
+@body.23
+	%.3 =w loadw %.2
+	%.4 =w add %.3, 3
+	%.5 =l extsw %.4
+	ret %.5
+}
+function l $used_address() {
+@start.24
+@body.25
+	%.1 =l extsw 4
+	ret %.1
+}
+function l $used_data() {
+@start.26
+@body.27
+	%.1 =l extsw 5
+	ret %.1
+}
+function l $used_chain_leaf(l %.1) {
+@start.28
+	%.2 =l alloc4 4
+	storew %.1, %.2
+@body.29
+	%.3 =w loadw %.2
+	%.4 =w add %.3, 6
+	%.5 =l extsw %.4
+	ret %.5
+}
+function l $used_chain_mid(l %.1) {
+@start.30
+	%.2 =l alloc4 4
+	storew %.1, %.2
+@body.31
+	%.3 =w loadw %.2
+	%.4 =l extsw %.3
+	%.5 =l call $used_chain_leaf(l %.4)
+	%.6 =l extsw %.5
+	ret %.6
+}
+function l $used_ctor() {
+@start.32
+@body.33
+	%.1 =l extsw 8
+	ret %.1
+}
+data $table = align 8 { l $used_data, }
+export
+function l $entry(l %.1) {
+@start.34
+	%.2 =l alloc4 4
+	storew %.1, %.2
+@body.35
+	storel $used_address, extern $fnptr
+	%.3 =w loadw %.2
+	%.4 =l extsw %.3
+	%.5 =l call $used_direct(l %.4)
+	%.6 =w loadw %.2
+	%.7 =l extsw %.6
+	%.8 =l call $used_chain_mid(l %.7)
+	%.9 =w add %.5, %.8
+	%.10 =w loadw %.2
+	%.11 =l extsw %.10
+	%.12 =l call $used_forward(l %.11)
+	%.13 =w add %.9, %.12
+	%.14 =l extsw 0
+	%.15 =l mul %.14, 8
+	%.16 =l add $table, %.15
+	%.17 =l loadl %.16
+	%.18 =l call %.17()
+	%.19 =w add %.13, %.18
+	%.20 =l extsw %.19
+	%.21 =l call extern $sink(l %.20)
+	%.22 =l extsw %.21
+	ret %.22
+}
+function l $used_forward(l %.1) {
+@start.36
+	%.2 =l alloc4 4
+	storew %.1, %.2
+@body.37
+	%.3 =w loadw %.2
+	%.4 =w sub %.3, 1
+	%.5 =l extsw %.4
+	ret %.5
+}
+function $ctor() {
+@start.38
+@body.39
+	%.1 =l call $used_ctor()
+	%.2 =l extsw %.1
+	%.3 =l call extern $sink(l %.2)
+	ret
+}
+section ".init_array"
+data $__cproc_ctor_0 = align 8 { l $ctor }
+export data $fnptr = align 8 { z 8 }
