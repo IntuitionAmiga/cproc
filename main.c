@@ -7,6 +7,8 @@
 #include "arg.h"
 #include "cc.h"
 
+bool ie64fpvec;
+
 static void
 ppoption(struct array *buf, const char *directive, const char *arg)
 {
@@ -122,6 +124,11 @@ main(int argc, char *argv[])
 	case 't':
 		target = EARGF(usage());
 		break;
+	case 'm':
+		if (strcmp(EARGF(usage()), "fpvec") != 0)
+			usage();
+		ie64fpvec = true;
+		break;
 	case 'W':
 		if (strcmp(EARGF(usage()), "error") != 0)
 			usage();
@@ -135,7 +142,11 @@ main(int argc, char *argv[])
 	} ARGEND
 
 	targinit(target);
+	if (ie64fpvec && (!target || strcmp(target, "ie64") != 0))
+		fatal("-m fpvec needs the ie64 target");
 	if (target && strcmp(target, "ie64") == 0) {
+		if (ie64fpvec)
+			ppoption(&predefines, "#define", "__IE64_FPVEC__=1");
 		ppoption(&predefines, "#define", "__ie64__=1");
 		ppoption(&predefines, "#define", "__IE64__=1");
 		ppoption(&predefines, "#define", "__ie64_baremetal__=1");

@@ -184,6 +184,7 @@ enum ie64builtinkind {
 	IE64B_DLOG, IE64B_DEXP, IE64B_DPOW, IE64B_DSQRT,
 	IE64B_XCHG, IE64B_FAA, IE64B_FAND, IE64B_FOR, IE64B_FXOR,
 	IE64B_CAS,
+	IE64B_FIPR, IE64B_FTRV,
 	IE64B_COUNT,
 };
 
@@ -358,6 +359,7 @@ enum ppflags {
 
 extern enum ppflags ppflags;
 extern bool ppwarningsareerrors;
+extern bool ie64fpvec;  /* -m fpvec: FIPR and FTRV builtins are enabled */
 
 void ppinit(void);
 enum ppinclude {

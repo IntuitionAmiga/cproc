@@ -1,0 +1,38 @@
+export data $fpvec_macro = align 4 { w 1, }
+export
+function s $dot(l %.1, l %.3) {
+@start.1
+	%.2 =l alloc8 8
+	storel %.1, %.2
+	%.4 =l alloc8 8
+	storel %.3, %.4
+@body.2
+	%.5 =l loadl %.2
+	%.6 =l loadl %.4
+	%.7 =s ie64fipr %.5, %.6
+	ret %.7
+}
+export
+function $transform(l %.1, l %.3) {
+@start.3
+	%.2 =l alloc8 8
+	storel %.1, %.2
+	%.4 =l alloc8 8
+	storel %.3, %.4
+@body.4
+	%.5 =l loadl %.2
+	%.6 =l loadl %.4
+	ie64ftrv %.5, %.6
+	ret
+}
+export
+function $flags(l %.1) {
+@start.5
+	%.2 =l alloc8 8
+	storel %.1, %.2
+@body.6
+	%.3 =l loadl %.2
+	%.4 =l loadl %.2
+	%.5 =s ie64fipr %.3, %.4
+	ret
+}

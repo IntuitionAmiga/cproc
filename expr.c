@@ -1140,6 +1140,8 @@ static const struct ie64builtin ie64builtins[] = {
 	{"__builtin_ie64_for", IE64B_FOR, -1, 0},
 	{"__builtin_ie64_fxor", IE64B_FXOR, -1, 0},
 	{"__builtin_ie64_cas", IE64B_CAS, -1, 0},
+	{"__builtin_ie64_fipr", IE64B_FIPR, -1, 0},
+	{"__builtin_ie64_ftrv", IE64B_FTRV, -1, 0},
 };
 
 static const char *const ie64builtinsig[IE64B_COUNT] = {
@@ -1165,6 +1167,7 @@ static const char *const ie64builtinsig[IE64B_COUNT] = {
 	[IE64B_XCHG] = "UpU", [IE64B_FAA] = "UpU",
 	[IE64B_FAND] = "UpU", [IE64B_FOR] = "UpU", [IE64B_FXOR] = "UpU",
 	[IE64B_CAS] = "UpUU",
+	[IE64B_FIPR] = "fcc", [IE64B_FTRV] = "vcP",
 };
 
 static bool
@@ -1179,6 +1182,12 @@ ie64builtintype(struct type *t, int code)
 	case 'p':
 		return t->kind == TYPEPOINTER && typesame(t->base, &typeulong)
 			&& t->qual == QUALVOLATILE;
+	case 'c':  /* const float * */
+		return t->kind == TYPEPOINTER && typesame(t->base, &typefloat)
+			&& t->qual == QUALCONST;
+	case 'P':  /* float * */
+		return t->kind == TYPEPOINTER && typesame(t->base, &typefloat)
+			&& t->qual == QUALNONE;
 	default: fatal("internal error: invalid IE64 builtin signature");
 	}
 }
@@ -1220,6 +1229,8 @@ recognizeie64builtin(struct expr *call)
 			break;
 	if (b == ie64builtins + countof(ie64builtins))
 		return;
+	if ((b->kind == IE64B_FIPR || b->kind == IE64B_FTRV) && !ie64fpvec)
+		error(&tok.loc, "%s needs the -mfpvec option", b->name);
 	if (!ie64builtindecl(d->type, ie64builtinsig[b->kind]))
 		error(&tok.loc, "%s has an incompatible declaration", b->name);
 	call->u.call.ie64 = b->kind;

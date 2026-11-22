@@ -507,6 +507,7 @@ static const enum instkind ie64inst[IE64B_COUNT] = {
 	[IE64B_FAA] = IIE64FAA, [IE64B_FAND] = IIE64FAND,
 	[IE64B_FOR] = IIE64FOR, [IE64B_FXOR] = IIE64FXOR,
 	[IE64B_CAS] = IIE64CAS,
+	[IE64B_FIPR] = IIE64FIPR, [IE64B_FTRV] = IIE64FTRV,
 };
 
 static struct inst *
