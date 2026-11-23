@@ -62,6 +62,10 @@ static struct array ctx;
 static struct array macros;
 /* number of macros currently undergoing expansion */
 static size_t macrodepth;
+/* source location of the outermost macro invocation being expanded; a
+   macro body token carries its definition site, so __LINE__ and __FILE__
+   read this instead */
+static struct location invoked;
 static struct array includepaths[4];
 struct dependency { char *path; bool system; };
 static struct array dependencies;
@@ -1484,23 +1488,25 @@ expand(struct token *t)
 
 	if (t->kind < TPPIDENT)
 		return false;
+	if (macrodepth == 0)
+		invoked = t->loc;
 	if (strcmp(tokenstr(t->kind), "__LINE__") == 0) {
 		builtin = xmalloc(sizeof *builtin);
 		*builtin = *t;
 		builtin->kind = TNUMBER;
 		builtin->lit = xmalloc(32);
-		snprintf(builtin->lit, 32, "%zu", t->loc.line);
+		snprintf(builtin->lit, 32, "%zu", invoked.line);
 		ctxpush(builtin, 1, NULL, t->space);
 		return true;
 	}
 	if (strcmp(tokenstr(t->kind), "__FILE__") == 0) {
-		size_t n = strlen(t->loc.file);
+		size_t n = strlen(invoked.file);
 		builtin = xmalloc(sizeof *builtin);
 		*builtin = *t;
 		builtin->kind = TSTRINGLIT;
 		builtin->lit = xmalloc(n + 3);
 		builtin->lit[0] = '"';
-		memcpy(builtin->lit + 1, t->loc.file, n);
+		memcpy(builtin->lit + 1, invoked.file, n);
 		builtin->lit[n+1] = '"'; builtin->lit[n+2] = '\0';
 		ctxpush(builtin, 1, NULL, t->space);
 		return true;
@@ -1527,9 +1533,18 @@ expand(struct token *t)
 		return false;
 	space = t->space;
 	if (m->kind == MACROFUNC) {
-		if (!peekparen())
+		struct location loc = invoked;
+		bool paren;
+
+		/* lookahead and argument reading may pop the frame of the
+		   macro that supplied this name and expand source tokens or
+		   directives at depth zero, which overwrites invoked */
+		paren = peekparen();
+		if (paren)
+			expandfunc(m);
+		invoked = loc;
+		if (!paren)
 			return false;
-		expandfunc(m);
 	}
 	ctxpush(m->token, m->ntoken, m, space);
 	m->hide = true;
