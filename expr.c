@@ -1743,7 +1743,8 @@ assignexpr(struct scope *s)
 	}
 	tmp = mkexpr(EXPRTEMP, mkpointertype(l->type, l->qual), NULL);
 	tmp->lvalue = true;
-	tmp->u.temp = NULL;
+	tmp->u.temp.value = NULL;
+	tmp->u.temp.origin = bit ? NULL : l;
 	e = mkassignexpr(tmp, mkunaryexpr(TBAND, l));
 	l = mkunaryexpr(TMUL, tmp);
 	if (bit) {

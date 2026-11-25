@@ -1,0 +1,16 @@
+export
+function l $f() {
+@start.1
+@body.2
+	%.1 =l call extern $a()
+	%.2 =l call extern $b(l %.1)
+	ret %.2
+}
+export
+function l $g() {
+@start.3
+@body.4
+	%.1 =l call extern $a()
+	%.2 =l extsh %.1
+	ret %.2
+}

@@ -317,7 +317,10 @@ struct expr {
 		struct {
 			struct type *type;
 		} szof;
-		struct value *temp;
+		struct {
+			struct value *value;
+			struct expr *origin;  /* borrowed lvalue of a compound assignment */
+		} temp;
 	} u;
 };
 

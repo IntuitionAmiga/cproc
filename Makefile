@@ -4,6 +4,7 @@ PREFIX=/usr/local
 BINDIR=$(PREFIX)/bin
 MANDIR=$(PREFIX)/share/man
 BACKEND=qbe
+CCQBE=./cproc-qbe
 
 objdir=.
 -include config.mk
@@ -91,7 +92,8 @@ bootstrap: stage2 stage3
 
 .PHONY: check check-c23-matrix
 check: all check-c23-matrix
-	@CCQBE=./cproc-qbe ./runtests
+	@./tools/check-ie64-loop-ir.sh ./cproc-qbe
+	@CCQBE=$(CCQBE) ./runtests
 
 check-c23-matrix:
 	@./tools/check-c23-matrix.sh

@@ -25,6 +25,9 @@ struct value {
 		VALUE_QUOTE = 1<<6,
 	} kind;
 	unsigned id;
+	/* Integer extension already present in the low word of this value. */
+	unsigned wordext;
+	struct type *abiresult;
 	union {
 		char *name;
 		unsigned long long i;
@@ -228,9 +231,12 @@ endunit(void)
 		closeseg();
 }
 
+enum memtype { MEM_UNKNOWN, MEM_SHORT, MEM_INT };
+
 struct lvalue {
 	struct value *addr;
 	struct bitfield bits;
+	enum memtype memtype;
 };
 
 enum instkind {
@@ -251,6 +257,7 @@ struct qbetype {
 
 struct inst {
 	enum instkind kind;
+	enum memtype memtype;
 	int class;
 	struct value res, *arg[2];
 };
@@ -469,8 +476,10 @@ static void
 functemp(struct func *f, struct value *v)
 {
 	v->kind = VALUE_TEMP;
+	v->wordext = 0;
 	v->u.name = NULL;
 	v->id = ++f->lastid;
+	v->abiresult = NULL;
 }
 
 static const char *const instname[] = {
@@ -518,8 +527,10 @@ mkinst(struct func *f, int op, int class, struct value *arg0, struct value *arg1
 	inst = xmalloc(sizeof(*inst));
 	inst->kind = op;
 	inst->class = class;
+	inst->memtype = MEM_UNKNOWN;
 	inst->arg[0] = arg0;
 	inst->arg[1] = arg1;
+	inst->res.wordext = 0;
 	if (class && op != IARG)
 		functemp(f, &inst->res);
 	else
@@ -528,7 +539,8 @@ mkinst(struct func *f, int op, int class, struct value *arg0, struct value *arg1
 }
 
 static struct value *
-funcinst(struct func *f, int op, int class, struct value *arg0, struct value *arg1)
+funcinstmem(struct func *f, int op, int class, struct value *arg0,
+    struct value *arg1, enum memtype mt)
 {
 	struct inst *inst;
 	struct block *b;
@@ -538,8 +550,23 @@ funcinst(struct func *f, int op, int class, struct value *arg0, struct value *ar
 		funclabel(f, b);
 	}
 	inst = mkinst(f, op, class, arg0, arg1);
+	inst->memtype = mt;
+	if (class == 'w') {
+		switch (op) {
+		case ILOADSB: case ILOADVSB: inst->res.wordext = IEXTSB; break;
+		case ILOADUB: case ILOADVUB: inst->res.wordext = IEXTUB; break;
+		case ILOADSH: case ILOADVSH: inst->res.wordext = IEXTSH; break;
+		case ILOADUH: case ILOADVUH: inst->res.wordext = IEXTUH; break;
+		}
+	}
 	arrayaddptr(&f->end->insts, inst);
 	return &inst->res;
+}
+
+static struct value *
+funcinst(struct func *f, int op, int class, struct value *arg0, struct value *arg1)
+{
+	return funcinstmem(f, op, class, arg0, arg1, MEM_UNKNOWN);
 }
 
 static struct value *
@@ -605,6 +632,9 @@ convert(struct func *f, struct type *dst, struct type *src, struct value *l)
 					return funcbits(f, dst, l, (struct bitfield){0});
 				return l;
 			}
+			/* IE64 calls return narrow integers already extended to 64 bits. */
+			if (l->kind == VALUE_TEMP && l->abiresult == src)
+				return l;
 			if (src->kind == TYPEBITINT && (src->size == 8 || dst->size == 4))
 				return l;
 			switch (src->size) {
@@ -636,6 +666,13 @@ convert(struct func *f, struct type *dst, struct type *src, struct value *l)
 		}
 	}
 
+	/* Widening within the word class can reuse an already extending load.
+	 * A cast to a narrower type keeps the same value but does not create
+	 * an extension fact for that narrower width. */
+	if (isie64() && class == 'w' && l->kind == VALUE_TEMP
+	&& (op == IEXTSB || op == IEXTUB || op == IEXTSH || op == IEXTUH)
+	&& l->wordext == op)
+		return l;
 	return funcinst(f, op, class, l, r);
 }
 
@@ -831,8 +868,8 @@ funcstore(struct func *f, struct type *t, enum typequal tq, struct lvalue lval, 
 				)
 			);
 		}
-		funcinst(f, tq & QUALVOLATILE ? volatileop(qt.store) : qt.store,
-			0, v, lval.addr);
+		funcinstmem(f, tq & QUALVOLATILE ? volatileop(qt.store) : qt.store,
+			0, v, lval.addr, tq & QUALVOLATILE ? MEM_UNKNOWN : lval.memtype);
 		break;
 	}
 	return r;
@@ -862,8 +899,8 @@ funcload(struct func *f, struct type *t, enum typequal tq, struct lvalue lval)
 		return lval.addr;
 	}
 	qt = qbetype(t);
-	v = funcinst(f, tq & QUALVOLATILE ? volatileop(qt.load) : qt.load,
-		qt.base, lval.addr, NULL);
+	v = funcinstmem(f, tq & QUALVOLATILE ? volatileop(qt.load) : qt.load,
+		qt.base, lval.addr, NULL, tq & QUALVOLATILE ? MEM_UNKNOWN : lval.memtype);
 	return funcbits(f, t, v, lval.bits);
 }
 
@@ -1015,6 +1052,33 @@ funcgoto(struct func *f, char *name)
 	return f->gotos.vals[idx].p;
 }
 
+/* Only scalar accesses through a typed pointer parameter qualify. A member
+ * selection, cast, or array decay on the address path breaks this form.
+ * In particular, an explicit union access must keep its full alias set. */
+static enum memtype
+parammemtype(struct func *f, struct expr *e)
+{
+	struct decl *p;
+	struct expr *addr;
+
+	if (!isie64() || e->kind != EXPRUNARY || e->op != TMUL
+	|| (e->type->kind != TYPESHORT && e->type->kind != TYPEINT))
+		return MEM_UNKNOWN;
+	if (e->base->kind == EXPRTEMP && e->base->u.temp.origin)
+		return parammemtype(f, e->base->u.temp.origin);
+	for (addr=e->base; addr->kind == EXPRBINARY
+	&& (addr->op == TADD || addr->op == TSUB); addr=addr->u.binary.l)
+		if (addr->u.binary.l->type->kind != TYPEPOINTER)
+			return MEM_UNKNOWN;
+	if (addr->kind != EXPRIDENT || addr->type->kind != TYPEPOINTER
+	|| addr->type->base->kind != e->type->kind)
+		return MEM_UNKNOWN;
+	for (p=f->type->u.func.params; p; p=p->next)
+		if (p == addr->u.ident.decl)
+			return e->type->kind == TYPESHORT ? MEM_SHORT : MEM_INT;
+	return MEM_UNKNOWN;
+}
+
 static struct lvalue
 funclval(struct func *f, struct expr *e)
 {
@@ -1056,6 +1120,8 @@ funclval(struct func *f, struct expr *e)
 		if (e->op != TMUL)
 			error(&tok.loc, "expression is not an object");
 		lval.addr = funcexpr(f, e->base);
+		if (!lval.bits.before && !lval.bits.after)
+			lval.memtype = parammemtype(f, e);
 		break;
 	default:
 		if (e->type->kind != TYPESTRUCT && e->type->kind != TYPEUNION)
@@ -1222,6 +1288,8 @@ funcexpr(struct func *f, struct expr *e)
 				param = param->next;
 		}
 		v = funcinst(f, ICALL, abiclass(t), funcexpr(f, e->base), t->value);
+		if (ie64wideint(t) && t->kind != TYPEBITINT)
+			v->abiresult = t;
 		param = functype->u.func.params;
 		for (arg = e->u.call.args, i = 0; arg; arg = arg->next, ++i) {
 			if (functype->u.func.isvararg && i == functype->u.func.nparam)
@@ -1244,8 +1312,8 @@ funcexpr(struct func *f, struct expr *e)
 			lval = funclval(f, e->base);
 			return lval.addr;
 		case TMUL:
-			r = funcexpr(f, e->base);
-			return funcload(f, e->type, e->qual, (struct lvalue){r});
+			lval = funclval(f, e);
+			return funcload(f, e->type, e->qual, lval);
 		case TSUB:
 			r = funcexpr(f, e->base);
 			return funcinst(f, INEG, qbetype(e->type).base, r, NULL);
@@ -1385,7 +1453,7 @@ funcexpr(struct func *f, struct expr *e)
 	case EXPRASSIGN:
 		r = funcexpr(f, e->u.assign.r);
 		if (e->u.assign.l->kind == EXPRTEMP) {
-			e->u.assign.l->u.temp = r;
+			e->u.assign.l->u.temp.value = r;
 		} else {
 			lval = funclval(f, e->u.assign.l);
 			r = funcstore(f, e->u.assign.l->type, e->u.assign.l->qual, lval, r);
@@ -1548,8 +1616,8 @@ funcexpr(struct func *f, struct expr *e)
 		}
 		return NULL;
 	case EXPRTEMP:
-		assert(e->u.temp);
-		return e->u.temp;
+		assert(e->u.temp.value);
+		return e->u.temp.value;
 	case EXPRSIZEOF:
 		t = e->u.szof.type;
 		assert(t->kind == TYPEARRAY);
@@ -1590,7 +1658,7 @@ zero(struct func *func, struct value *addr, int align, unsigned long long offset
 void
 funcinit(struct func *func, struct decl *d, struct init *init, bool hasinit)
 {
-	struct lvalue dst;
+	struct lvalue dst = {0};
 	struct value *src, *v;
 	unsigned long long offset = 0, max = 0;
 	size_t i, w;
@@ -1800,6 +1868,7 @@ emitinst(struct inst **instp, struct inst **instend)
 {
 	int op, first;
 	struct inst *inst = *instp;
+	enum memtype mt = inst->memtype;
 
 	putchar('\t');
 	assert(inst->kind < countof(instname));
@@ -1843,6 +1912,8 @@ emitinst(struct inst **instp, struct inst **instend)
 			emitvalue(inst->arg[1]);
 		}
 	}
+	if (mt)
+		printf(" #!%d", mt);
 	putchar('\n');
 	return instp;
 }
