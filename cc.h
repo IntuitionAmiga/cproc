@@ -185,6 +185,24 @@ enum ie64builtinkind {
 	IE64B_XCHG, IE64B_FAA, IE64B_FAND, IE64B_FOR, IE64B_FXOR,
 	IE64B_CAS,
 	IE64B_FIPR, IE64B_FTRV,
+	IE64B_FRSQRT,
+	IE64B_FMIN,
+	IE64B_FMAX,
+	IE64B_FSINCOS,
+	IE64B_FROUND,
+	IE64B_FTRUNC,
+	IE64B_FFLOOR,
+	IE64B_FCEIL,
+	IE64B_FMA,
+	IE64B_DRSQRT,
+	IE64B_DMIN,
+	IE64B_DMAX,
+	IE64B_DSINCOS,
+	IE64B_DROUND,
+	IE64B_DTRUNC,
+	IE64B_DFLOOR,
+	IE64B_DCEIL,
+	IE64B_DFMA,
 	IE64B_COUNT,
 };
 
@@ -362,6 +380,7 @@ enum ppflags {
 
 extern enum ppflags ppflags;
 extern bool ppwarningsareerrors;
+extern bool ie64fpext, ie64fma;
 extern bool ie64fpvec;  /* -m fpvec: FIPR and FTRV builtins are enabled */
 
 void ppinit(void);

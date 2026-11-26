@@ -516,6 +516,24 @@ static const enum instkind ie64inst[IE64B_COUNT] = {
 	[IE64B_FAA] = IIE64FAA, [IE64B_FAND] = IIE64FAND,
 	[IE64B_FOR] = IIE64FOR, [IE64B_FXOR] = IIE64FXOR,
 	[IE64B_CAS] = IIE64CAS,
+	[IE64B_FRSQRT] = IIE64FRSQRT,
+	[IE64B_FMIN] = IIE64FMIN,
+	[IE64B_FMAX] = IIE64FMAX,
+	[IE64B_FSINCOS] = IIE64FSINCOS,
+	[IE64B_FROUND] = IIE64FROUND,
+	[IE64B_FTRUNC] = IIE64FTRUNC,
+	[IE64B_FFLOOR] = IIE64FFLOOR,
+	[IE64B_FCEIL] = IIE64FCEIL,
+	[IE64B_FMA] = IIE64FMA,
+	[IE64B_DRSQRT] = IIE64DRSQRT,
+	[IE64B_DMIN] = IIE64DMIN,
+	[IE64B_DMAX] = IIE64DMAX,
+	[IE64B_DSINCOS] = IIE64DSINCOS,
+	[IE64B_DROUND] = IIE64DROUND,
+	[IE64B_DTRUNC] = IIE64DTRUNC,
+	[IE64B_DFLOOR] = IIE64DFLOOR,
+	[IE64B_DCEIL] = IIE64DCEIL,
+	[IE64B_DFMA] = IIE64DFMA,
 	[IE64B_FIPR] = IIE64FIPR, [IE64B_FTRV] = IIE64FTRV,
 };
 
@@ -1263,7 +1281,23 @@ funcexpr(struct func *f, struct expr *e)
 		emittype(t);
 		if (e->u.call.ie64) {
 			op = ie64inst[e->u.call.ie64];
-			if (e->u.call.ie64 == IE64B_CAS) {
+			if (op == IIE64FSINCOS || op == IIE64DSINCOS) {
+				bool wide = op == IIE64DSINCOS;
+				struct type *fp = wide ? &typedouble : &typefloat;
+				int cls = wide ? 'd' : 's';
+				struct value *sin, *cos;
+				sin = funcinst(f, op, cls, argvals[0], NULL);
+				cos = funcinst(f, wide ? IIE64DCOSRESULT : IIE64FCOSRESULT, cls, sin, NULL);
+				funcstore(f, fp, QUALNONE, (struct lvalue){argvals[1]}, sin);
+				funcstore(f, fp, QUALNONE, (struct lvalue){argvals[2]}, cos);
+				v = NULL;
+			} else if (op == IIE64FMA || op == IIE64DFMA) {
+				bool wide = op == IIE64DFMA;
+				int cls = wide ? 'd' : 's';
+				struct value *pair = funcinst(f, wide ? IIE64DFMAPAIR : IIE64FMAPAIR,
+					cls, argvals[1], argvals[2]);
+				v = funcinst(f, op, cls, argvals[0], pair);
+			} else if (e->u.call.ie64 == IE64B_CAS) {
 				funcinst(f, IIE64CASD, 0, argvals[2], NULL);
 				v = funcinst(f, op, qbetype(t).base, argvals[0], argvals[1]);
 			} else {

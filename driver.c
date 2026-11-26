@@ -376,7 +376,7 @@ main(int argc, char *argv[])
 {
 	enum stage last = LINK;
 	enum filetype filetype = 0;
-	bool signedloads = false;
+	bool signedloads = false, fpext = false, fma = false;
 	char *arg, *end, *output = NULL, *arch, *qbearch;
 	struct array inputs = {0}, *cmd;
 	struct input *input;
@@ -454,6 +454,14 @@ ignore:
 			if (strcmp(qbearch, "ie64") != 0)
 				usage("option '%s' needs the IE64 target", arg);
 			signedloads = strcmp(arg, "-msigned-loads") == 0;
+		} else if (strcmp(arg, "-mfpext") == 0 || strcmp(arg, "-mno-fpext") == 0) {
+			if (strcmp(qbearch, "ie64") != 0)
+				usage("option '%s' needs the IE64 target", arg);
+			fpext = arg[2] == 'f';
+		} else if (strcmp(arg, "-mfma") == 0 || strcmp(arg, "-mno-fma") == 0) {
+			if (strcmp(qbearch, "ie64") != 0)
+				usage("option '%s' needs the IE64 target", arg);
+			fma = arg[2] == 'f';
 		} else if (strcmp(arg, "-emit-qbe") == 0) {
 			if (last > COMPILE)
 				last = COMPILE;
@@ -589,6 +597,18 @@ ignore:
 		}
 	}
 
+	if (fpext) {
+		arrayaddptr(&stages[PREPROCESS].cmd, "-D__IE64_FPEXT__=1");
+		arrayaddptr(&stages[COMPILE].cmd, "-m");
+		arrayaddptr(&stages[COMPILE].cmd, "fpext");
+		arrayaddptr(&stages[CODEGEN].cmd, "-mfpext");
+	}
+	if (fma) {
+		arrayaddptr(&stages[PREPROCESS].cmd, "-D__IE64_FMA__=1");
+		arrayaddptr(&stages[COMPILE].cmd, "-m");
+		arrayaddptr(&stages[COMPILE].cmd, "fma");
+		arrayaddptr(&stages[CODEGEN].cmd, "-mfma");
+	}
 	if (signedloads)
 		arrayaddptr(&stages[CODEGEN].cmd, "-msigned-loads");
 

@@ -7,6 +7,7 @@
 #include "arg.h"
 #include "cc.h"
 
+bool ie64fpext, ie64fma;
 bool ie64fpvec;
 
 static void
@@ -124,11 +125,18 @@ main(int argc, char *argv[])
 	case 't':
 		target = EARGF(usage());
 		break;
-	case 'm':
-		if (strcmp(EARGF(usage()), "fpvec") != 0)
+	case 'm': {
+		const char *option = EARGF(usage());
+		if (strcmp(option, "fpvec") == 0)
+			ie64fpvec = true;
+		else if (strcmp(option, "fpext") == 0 || strcmp(option, "no-fpext") == 0)
+			ie64fpext = option[0] == 'f';
+		else if (strcmp(option, "fma") == 0 || strcmp(option, "no-fma") == 0)
+			ie64fma = option[0] == 'f';
+		else
 			usage();
-		ie64fpvec = true;
 		break;
+	}
 	case 'W':
 		if (strcmp(EARGF(usage()), "error") != 0)
 			usage();
@@ -144,7 +152,13 @@ main(int argc, char *argv[])
 	targinit(target);
 	if (ie64fpvec && (!target || strcmp(target, "ie64") != 0))
 		fatal("-m fpvec needs the ie64 target");
+	if ((ie64fpext || ie64fma) && (!target || strcmp(target, "ie64") != 0))
+		fatal("-m fpext and -m fma need the ie64 target");
 	if (target && strcmp(target, "ie64") == 0) {
+		if (ie64fpext)
+			ppoption(&predefines, "#define", "__IE64_FPEXT__=1");
+		if (ie64fma)
+			ppoption(&predefines, "#define", "__IE64_FMA__=1");
 		if (ie64fpvec)
 			ppoption(&predefines, "#define", "__IE64_FPVEC__=1");
 		ppoption(&predefines, "#define", "__ie64__=1");

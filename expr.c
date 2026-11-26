@@ -1140,6 +1140,24 @@ static const struct ie64builtin ie64builtins[] = {
 	{"__builtin_ie64_for", IE64B_FOR, -1, 0},
 	{"__builtin_ie64_fxor", IE64B_FXOR, -1, 0},
 	{"__builtin_ie64_cas", IE64B_CAS, -1, 0},
+	{"__builtin_ie64_frsqrt", IE64B_FRSQRT, -1, 0},
+	{"__builtin_ie64_fmin", IE64B_FMIN, -1, 0},
+	{"__builtin_ie64_fmax", IE64B_FMAX, -1, 0},
+	{"__builtin_ie64_fsincos", IE64B_FSINCOS, -1, 0},
+	{"__builtin_ie64_fround", IE64B_FROUND, -1, 0},
+	{"__builtin_ie64_ftrunc", IE64B_FTRUNC, -1, 0},
+	{"__builtin_ie64_ffloor", IE64B_FFLOOR, -1, 0},
+	{"__builtin_ie64_fceil", IE64B_FCEIL, -1, 0},
+	{"__builtin_ie64_fma", IE64B_FMA, -1, 0},
+	{"__builtin_ie64_drsqrt", IE64B_DRSQRT, -1, 0},
+	{"__builtin_ie64_dmin", IE64B_DMIN, -1, 0},
+	{"__builtin_ie64_dmax", IE64B_DMAX, -1, 0},
+	{"__builtin_ie64_dsincos", IE64B_DSINCOS, -1, 0},
+	{"__builtin_ie64_dround", IE64B_DROUND, -1, 0},
+	{"__builtin_ie64_dtrunc", IE64B_DTRUNC, -1, 0},
+	{"__builtin_ie64_dfloor", IE64B_DFLOOR, -1, 0},
+	{"__builtin_ie64_dceil", IE64B_DCEIL, -1, 0},
+	{"__builtin_ie64_dfma", IE64B_DFMA, -1, 0},
 	{"__builtin_ie64_fipr", IE64B_FIPR, -1, 0},
 	{"__builtin_ie64_ftrv", IE64B_FTRV, -1, 0},
 };
@@ -1167,6 +1185,24 @@ static const char *const ie64builtinsig[IE64B_COUNT] = {
 	[IE64B_XCHG] = "UpU", [IE64B_FAA] = "UpU",
 	[IE64B_FAND] = "UpU", [IE64B_FOR] = "UpU", [IE64B_FXOR] = "UpU",
 	[IE64B_CAS] = "UpUU",
+	[IE64B_FRSQRT] = "ff",
+	[IE64B_FMIN] = "fff",
+	[IE64B_FMAX] = "fff",
+	[IE64B_FSINCOS] = "vfPP",
+	[IE64B_FROUND] = "ff",
+	[IE64B_FTRUNC] = "ff",
+	[IE64B_FFLOOR] = "ff",
+	[IE64B_FCEIL] = "ff",
+	[IE64B_FMA] = "ffff",
+	[IE64B_DRSQRT] = "dd",
+	[IE64B_DMIN] = "ddd",
+	[IE64B_DMAX] = "ddd",
+	[IE64B_DSINCOS] = "vdDD",
+	[IE64B_DROUND] = "dd",
+	[IE64B_DTRUNC] = "dd",
+	[IE64B_DFLOOR] = "dd",
+	[IE64B_DCEIL] = "dd",
+	[IE64B_DFMA] = "dddd",
 	[IE64B_FIPR] = "fcc", [IE64B_FTRV] = "vcP",
 };
 
@@ -1185,6 +1221,9 @@ ie64builtintype(struct type *t, int code)
 	case 'c':  /* const float * */
 		return t->kind == TYPEPOINTER && typesame(t->base, &typefloat)
 			&& t->qual == QUALCONST;
+	case 'D':
+		return t->kind == TYPEPOINTER && typesame(t->base, &typedouble)
+			&& t->qual == QUALNONE;
 	case 'P':  /* float * */
 		return t->kind == TYPEPOINTER && typesame(t->base, &typefloat)
 			&& t->qual == QUALNONE;
@@ -1231,6 +1270,11 @@ recognizeie64builtin(struct expr *call)
 		return;
 	if ((b->kind == IE64B_FIPR || b->kind == IE64B_FTRV) && !ie64fpvec)
 		error(&tok.loc, "%s needs the -mfpvec option", b->name);
+	if (b->kind >= IE64B_FRSQRT && b->kind <= IE64B_DFMA) {
+		bool fused = b->kind == IE64B_FMA || b->kind == IE64B_DFMA;
+		if (fused ? !ie64fma : !ie64fpext)
+			error(&tok.loc, "%s needs the %s option", b->name, fused ? "-mfma" : "-mfpext");
+	}
 	if (!ie64builtindecl(d->type, ie64builtinsig[b->kind]))
 		error(&tok.loc, "%s has an incompatible declaration", b->name);
 	call->u.call.ie64 = b->kind;
