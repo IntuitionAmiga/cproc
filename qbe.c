@@ -310,7 +310,7 @@ switchcase(struct switchcases *cases, unsigned long long i, struct block *b)
 {
 	struct switchcase *c;
 
-	c = treeinsert(&cases->root, i, sizeof(*c));
+	c = treeinsert(&cases->root, intcast(i, cases->type), sizeof(*c));
 	if (!c->node.new)
 		error(&tok.loc, "multiple 'case' labels with same value");
 	c->body = b;

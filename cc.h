@@ -509,6 +509,7 @@ struct expr *exprpromote(struct expr *);
 /* eval */
 
 struct expr *eval(struct expr *);
+unsigned long long intcast(unsigned long long, struct type *);
 
 /* init */
 

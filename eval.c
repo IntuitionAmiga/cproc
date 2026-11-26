@@ -8,21 +8,27 @@ enum {
 	S = 2<<8
 };
 
+unsigned long long
+intcast(unsigned long long value, struct type *t)
+{
+	unsigned long long sign = 1ull << (t->u.arith.width - 1);
+
+	value &= sign | (sign - 1);
+	if (t->u.arith.issigned)
+		value = (value ^ sign) - sign;
+	return value;
+}
+
 static void
 cast(struct expr *expr)
 {
-	struct type *t;
-	unsigned long long m;
+	struct type *t = expr->type;
 
-	t = expr->type;
 	if (t->prop & PROPFLOAT) {
 		if (t->size == 4)
 			expr->u.constant.f = (float)expr->u.constant.f;
 	} else if (t->prop & PROPINT) {
-		m = 1ull << t->u.arith.width - 1;
-		expr->u.constant.u &= m | m - 1;
-		if (t->u.arith.issigned)
-			expr->u.constant.u = (expr->u.constant.u ^ m) - m;
+		expr->u.constant.u = intcast(expr->u.constant.u, t);
 	}
 }
 
