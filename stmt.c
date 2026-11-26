@@ -140,9 +140,7 @@ stmt(struct func *f, struct scope *s)
 			error(&tok.loc, "controlling expression of switch statement must have integer type");
 		e = exprpromote(e);
 
-		swtch.root = NULL;
-		swtch.type = e->type;
-		swtch.defaultlabel = NULL;
+		swtch = (struct switchcases){.type = e->type};
 
 		b[0] = mkblock("switch_cond");
 		b[1] = mkblock("switch_join");

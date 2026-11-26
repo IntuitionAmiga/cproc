@@ -3,6 +3,7 @@
 #include <ctype.h>
 #include <inttypes.h>
 #include <stdbool.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -267,11 +268,14 @@ struct jump {
 		JUMP_NONE,
 		JUMP_JMP,
 		JUMP_JNZ,
+		JUMP_SWITCH,
 		JUMP_RET,
 		JUMP_HLT,
 	} kind;
 	struct value *arg;
 	struct block *blk[2];
+	struct block **table;
+	size_t count;
 };
 
 struct block {
@@ -309,11 +313,22 @@ void
 switchcase(struct switchcases *cases, unsigned long long i, struct block *b)
 {
 	struct switchcase *c;
+	unsigned long long ordered, bias;
 
-	c = treeinsert(&cases->root, intcast(i, cases->type), sizeof(*c));
+	i = intcast(i, cases->type);
+	c = treeinsert(&cases->root, i, sizeof(*c));
 	if (!c->node.new)
 		error(&tok.loc, "multiple 'case' labels with same value");
 	c->body = b;
+	/* Signed keys are sign extended. Flip the high bit to measure the
+	 * span in selector order, including ranges that straddle zero. */
+	bias = cases->type->u.arith.issigned ? 1ull << 63 : 0;
+	ordered = i ^ bias;
+	if (!cases->count || ordered < (cases->first ^ bias))
+		cases->first = i;
+	if (!cases->count || ordered > (cases->last ^ bias))
+		cases->last = i;
+	cases->count++;
 }
 
 /* values */
@@ -1766,10 +1781,49 @@ casesearch(struct func *f, int class, struct value *v, struct switchcase *c, str
 	casesearch(f, class, v, c->node.child[1], defaultlabel, c->node.key + 1, max);
 }
 
+static void
+casetable(struct switchcase *c, unsigned long long first, struct block **table)
+{
+	if (!c)
+		return;
+	table[c->node.key - first] = c->body;
+	casetable(c->node.child[0], first, table);
+	casetable(c->node.child[1], first, table);
+}
+
 void
 funcswitch(struct func *f, struct value *v, struct switchcases *c, struct block *defaultlabel)
 {
-	casesearch(f, qbetype(c->type).base, v, c->root, defaultlabel, 0, -1);
+	int class = qbetype(c->type).base;
+	unsigned long long span = c->last - c->first;
+	struct jump *j;
+	size_t n;
+
+	/* Use a minimum case count and density as LLVM does. IE64 dispatch
+	 * can take eight instructions even before normalising the selector.
+	 * Keep shorter trees and require at least half the slots to be used. */
+	if (strcmp(targ->name, "ie64") != 0 || c->count < 9
+	    || span / 2 >= c->count || span >= UINT_MAX
+	    || span >= SIZE_MAX / sizeof(*j->table)) {
+		casesearch(f, class, v, c->root, defaultlabel, 0, -1);
+		return;
+	}
+
+	/* Subtract at selector width so indices below the first case wrap
+	 * to a large unsigned value. QBE's dispatch index is a long. */
+	if (c->first)
+		v = funcinst(f, ISUB, class, v, mkintconst(c->first));
+	if (class == 'w')
+		v = funcinst(f, IEXTUW, 'l', v, NULL);
+	j = &f->end->jump;
+	j->kind = JUMP_SWITCH;
+	j->arg = v;
+	j->blk[0] = defaultlabel;
+	j->count = span + 1;
+	j->table = xmalloc(j->count * sizeof(*j->table));
+	for (n=0; n<j->count; n++)
+		j->table[n] = defaultlabel;
+	casetable(c->root, c->first, j->table);
 }
 
 /* emit */
@@ -1955,6 +2009,8 @@ emitinst(struct inst **instp, struct inst **instend)
 static void
 emitjump(struct jump *j)
 {
+	size_t n;
+
 	switch (j->kind) {
 	case JUMP_NONE:
 		break;
@@ -1979,6 +2035,18 @@ emitjump(struct jump *j)
 		fputs(", ", stdout);
 		emitname(&j->blk[1]->label);
 		putchar('\n');
+		break;
+	case JUMP_SWITCH:
+		fputs("\tswitch ", stdout);
+		emitvalue(j->arg);
+		fputs(", ", stdout);
+		emitname(&j->blk[0]->label);
+		for (n=0; n<j->count; n++) {
+			fputs(", ", stdout);
+			emitname(&j->table[n]->label);
+		}
+		putchar('\n');
+		free(j->table);
 		break;
 	case JUMP_HLT:
 		fputs("\thlt\n", stdout);

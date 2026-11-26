@@ -531,6 +531,8 @@ struct switchcases {
 	void *root;
 	struct type *type;
 	struct block *defaultlabel;
+	size_t count;
+	unsigned long long first, last;
 };
 
 void switchcase(struct switchcases *, unsigned long long, struct block *);

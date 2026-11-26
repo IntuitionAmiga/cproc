@@ -93,6 +93,7 @@ bootstrap: stage2 stage3
 .PHONY: check check-c23-matrix
 check: all check-c23-matrix
 	@./tools/check-ie64-loop-ir.sh ./cproc-qbe
+	@sh ./tools/check-ie64-switch.sh $(CCQBE)
 	@CCQBE=$(CCQBE) ./runtests
 
 check-c23-matrix:
