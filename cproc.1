@@ -56,6 +56,12 @@ If
 .Ar library
 is a relative path, it will be searched through the compiler search
 paths.
+.It Fl msigned-loads
+Use signed narrow load instructions for the IE64 target.
+This option requires an engine that supports the new instructions.
+Use
+.Fl mno-signed-loads
+to restore the default code generation.
 .It Fl o Ar output
 Write the output to
 .Ar output .

@@ -376,6 +376,7 @@ main(int argc, char *argv[])
 {
 	enum stage last = LINK;
 	enum filetype filetype = 0;
+	bool signedloads = false;
 	char *arg, *end, *output = NULL, *arch, *qbearch;
 	struct array inputs = {0}, *cmd;
 	struct input *input;
@@ -449,6 +450,10 @@ ignore:
 			arrayaddptr(&stages[PREPROCESS].cmd, arg);
 		} else if (strcmp(arg, "-static") == 0) {
 			arrayaddptr(&stages[LINK].cmd, arg);
+		} else if (strcmp(arg, "-msigned-loads") == 0 || strcmp(arg, "-mno-signed-loads") == 0) {
+			if (strcmp(qbearch, "ie64") != 0)
+				usage("option '%s' needs the IE64 target", arg);
+			signedloads = strcmp(arg, "-msigned-loads") == 0;
 		} else if (strcmp(arg, "-emit-qbe") == 0) {
 			if (last > COMPILE)
 				last = COMPILE;
@@ -583,6 +588,9 @@ ignore:
 			}
 		}
 	}
+
+	if (signedloads)
+		arrayaddptr(&stages[CODEGEN].cmd, "-msigned-loads");
 
 	for (i = 0; i < countof(stages); ++i)
 		stages[i].cmdbase = stages[i].cmd.len;
