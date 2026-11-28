@@ -104,6 +104,31 @@ function $facilities(l %.1, l %.3, l %.5, s %.7, d %.9) {
 	%.90 =l ie64fmovcr
 	ie64fmovsc 1
 	ie64fmovcc 2
+	%.91 =l loadl %.4
+	%.92 =l loadl %.6
+	%.93 =l ie64clmul %.91, %.92
+	%.94 =l loadl %.4
+	%.95 =l loadl %.6
+	%.96 =l ie64clmulh %.94, %.95
+	%.97 =l loadl %.4
+	%.98 =l loadl %.6
+	%.99 =l ie64aeses %.97, %.98
+	%.100 =l loadl %.4
+	%.101 =l loadl %.6
+	%.102 =l ie64aesesm %.100, %.101
+	%.103 =l loadl %.4
+	%.104 =l loadl %.6
+	%.105 =l ie64aesds %.103, %.104
+	%.106 =l loadl %.4
+	%.107 =l loadl %.6
+	%.108 =l ie64aesdsm %.106, %.107
+	%.109 =l loadl %.4
+	%.110 =l ie64aesim %.109
+	%.111 =l loadl %.4
+	%.112 =l ie64aesks1i %.111, 10
+	%.113 =l loadl %.4
+	%.114 =l loadl %.6
+	%.115 =l ie64aesks2 %.113, %.114
 	ret
 }
 export

@@ -51,6 +51,15 @@ u64 __builtin_ie64_fmovsr(void);
 u64 __builtin_ie64_fmovcr(void);
 void __builtin_ie64_fmovsc(unsigned int);
 void __builtin_ie64_fmovcc(unsigned int);
+u64 __builtin_ie64_clmul(u64, u64);
+u64 __builtin_ie64_clmulh(u64, u64);
+u64 __builtin_ie64_aeses(u64, u64);
+u64 __builtin_ie64_aesesm(u64, u64);
+u64 __builtin_ie64_aesds(u64, u64);
+u64 __builtin_ie64_aesdsm(u64, u64);
+u64 __builtin_ie64_aesim(u64);
+u64 __builtin_ie64_aesks1i(u64, unsigned int);
+u64 __builtin_ie64_aesks2(u64, u64);
 
 void
 facilities(volatile u64 *p, u64 a, u64 b, float s, double d)
@@ -103,6 +112,15 @@ facilities(volatile u64 *p, u64 a, u64 b, float s, double d)
 	__builtin_ie64_fmovcr();
 	__builtin_ie64_fmovsc(1);
 	__builtin_ie64_fmovcc(2);
+	__builtin_ie64_clmul(a, b);
+	__builtin_ie64_clmulh(a, b);
+	__builtin_ie64_aeses(a, b);
+	__builtin_ie64_aesesm(a, b);
+	__builtin_ie64_aesds(a, b);
+	__builtin_ie64_aesdsm(a, b);
+	__builtin_ie64_aesim(a);
+	__builtin_ie64_aesks1i(a, 10);
+	__builtin_ie64_aesks2(a, b);
 }
 
 _Noreturn void stop(void) { __builtin_ie64_halt(); }

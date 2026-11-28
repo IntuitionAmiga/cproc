@@ -1160,6 +1160,15 @@ static const struct ie64builtin ie64builtins[] = {
 	{"__builtin_ie64_dfma", IE64B_DFMA, -1, 0},
 	{"__builtin_ie64_fipr", IE64B_FIPR, -1, 0},
 	{"__builtin_ie64_ftrv", IE64B_FTRV, -1, 0},
+	{"__builtin_ie64_clmul", IE64B_CLMUL, -1, 0},
+	{"__builtin_ie64_clmulh", IE64B_CLMULH, -1, 0},
+	{"__builtin_ie64_aeses", IE64B_AESES, -1, 0},
+	{"__builtin_ie64_aesesm", IE64B_AESESM, -1, 0},
+	{"__builtin_ie64_aesds", IE64B_AESDS, -1, 0},
+	{"__builtin_ie64_aesdsm", IE64B_AESDSM, -1, 0},
+	{"__builtin_ie64_aesim", IE64B_AESIM, -1, 0},
+	{"__builtin_ie64_aesks1i", IE64B_AESKS1I, 1, 10},
+	{"__builtin_ie64_aesks2", IE64B_AESKS2, -1, 0},
 };
 
 static const char *const ie64builtinsig[IE64B_COUNT] = {
@@ -1204,6 +1213,10 @@ static const char *const ie64builtinsig[IE64B_COUNT] = {
 	[IE64B_DCEIL] = "dd",
 	[IE64B_DFMA] = "dddd",
 	[IE64B_FIPR] = "fcc", [IE64B_FTRV] = "vcP",
+	[IE64B_CLMUL] = "UUU", [IE64B_CLMULH] = "UUU",
+	[IE64B_AESES] = "UUU", [IE64B_AESESM] = "UUU",
+	[IE64B_AESDS] = "UUU", [IE64B_AESDSM] = "UUU",
+	[IE64B_AESIM] = "UU", [IE64B_AESKS1I] = "UUu", [IE64B_AESKS2] = "UUU",
 };
 
 static bool
